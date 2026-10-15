@@ -82,8 +82,8 @@ void do_principles( CHAR_DATA *ch, char *argument )
 		stc("1 : Mienaku     - \"Ninja VANISH!\" - TMNT. (mienaku) <20 ki>\n\r", ch);
 	    if (get_ninja(ch, NINJA_CHIKYU) >= 4)
 		stc("4 : Orimasu     - Increased focus improves healing rates. (orimasu) <50 ki>\n\r", ch);
-	    if (get_ninja(ch, NINJA_CHIKYU) >= 6)
-		stc("6 : Gunaya      - Entangles foes in sticky strands of webbing. (web) <10 ki>\n\r", ch);
+	    if (get_ninja(ch, NINJA_CHIKYU) >= 8)
+		stc("8 : Gunaya      - Entangles foes in sticky strands of webbing. (web) <10 ki>\n\r", ch);
             if (get_ninja(ch, NINJA_CHIKYU) >= 8)
 		stc("8 : Tsumazuku   - Leaves opponents unable to respond to your attack. (tsumazuku)\n\r", ch);
 	    if (get_ninja(ch, NINJA_CHIKYU) >= 10)
@@ -350,7 +350,10 @@ void do_bomuzite( CHAR_DATA *ch, char *argument )
 	return;
     }
 
-    if (is_safe(ch, victim));
+    if (victim==ch || victim->hit<=0 || victim->position<=POS_STUNNED
+        || victim->position==POS_SLEEPING || IS_BUI(victim) || is_same_group(ch,victim)
+        || (!IS_NPC(victim) && (!CAN_PK(ch) || !CAN_PK(victim)))
+        || is_safe(ch,victim)) return;
 
     if (ch->pcdata->ninja[NINJA_KI] < 20)
     {
@@ -360,6 +363,7 @@ void do_bomuzite( CHAR_DATA *ch, char *argument )
 
     act("You toss your bomb onto the floor and put $N to sleep.", ch, NULL, victim, TO_CHAR);
     act("$n tosses a bomb onto the floor.  You feel sleepy.", ch, NULL, victim, TO_VICT);
+    stop_fighting(victim,TRUE);
     victim->position = POS_SLEEPING;
     ch->pcdata->ninja[NINJA_KI] -= 20; 
     WAIT_STATE(ch, 8);
@@ -372,6 +376,9 @@ void do_mizotamouyo( CHAR_DATA *ch, char *argument )
     CHAR_DATA *victim;
     char arg[MIL];
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room || !argument
+        || strlen(argument)>=MAX_INPUT_LENGTH || ch->hit<=0
+        || ch->position<=POS_SLEEPING) return;
     one_argument(argument, arg);
 
     if (!IS_NINJA(ch) || get_ninja(ch, NINJA_SORA) < 10)
@@ -406,6 +413,17 @@ void do_mizotamouyo( CHAR_DATA *ch, char *argument )
 	return;
     }
 
+    if (ch->fighting || victim->fighting || ch->fight_timer>0 || victim->fight_timer>0
+        || victim->hit<=0 || ch->embraced!=ARE_NONE || IS_EXTRA(ch,TIED_UP|EXTRA_OSWITCH)
+        || IS_MORE(ch,MORE_HEAD) || is_affected(ch,gsn_lineage_root)
+        || IS_AFFECTED(ch,AFF_CURSE|AFF_WEBBED|AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL)
+        || IS_AFFECTED(victim,AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL)
+        || IS_SET(ch->in_room->room_flags|victim->in_room->room_flags,
+            ROOM_NO_RECALL|ROOM_NO_TELEPORT|ROOM_PRIVATE|ROOM_SOLITARY))
+    {
+        stc("Combat, restraint or room/plane protections block that shadow path.\n\r",ch);
+        return;
+    }
     if (IS_AFFECTED(ch, AFF_KAKUSU))
     {
 	if (ch->pcdata->ninja[NINJA_KI] < 20)
@@ -452,7 +470,9 @@ void do_mienaku( CHAR_DATA *ch, char *argument )
 	return;
     }
 
-    if (IS_AFFECTED(ch, AFF_WEBBED) || IS_AFFECTED(ch, AFF_SHADOW))
+    if (IS_AFFECTED(ch, AFF_WEBBED|AFF_SHADOW) || is_affected(ch,gsn_lineage_root)
+        || IS_EXTRA(ch,TIED_UP|EXTRA_OSWITCH) || IS_MORE(ch,MORE_HEAD)
+        || ch->embraced!=ARE_NONE)
     {
 	stc("You are unable to flee while restrained.\n\r", ch);
 	return;
@@ -468,7 +488,7 @@ void do_mienaku( CHAR_DATA *ch, char *argument )
     was_in = ch->in_room;
 
     stc("You move to vanish from combat!\n\r", ch);
-    ch->pcdata->ninja[NINJA_KI] -= 10;
+    ch->pcdata->ninja[NINJA_KI] -= 20;
 
     for (attempt =  0; attempt < 6; attempt++)
     {

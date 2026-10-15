@@ -204,7 +204,7 @@ S
                 run("Legacyprobe", "quaff potion", b"You feel blessed")
                 record = snapshot("Legacyprobe")
                 assert affected(record, "armor") and affected(record, "bless")
-                assert numbers(record, "Armor")[0] == numbers(baseline, "Armor")[0] - 20
+                assert numbers(record, "Armor")[0] == numbers(baseline, "Armor")[0] + 20
                 assert numbers(record, "Hitroll")[0] == numbers(baseline, "Hitroll")[0] + 2
                 assert numbers(record, "SavingThrow")[0] == numbers(baseline, "SavingThrow")[0] - 2
                 give(8114, "potion")
@@ -299,10 +299,13 @@ S
                                 r"Hitroll:\s+(-?\d+)\.\s+Damroll:\s+(-?\d+)", text).groups()))
 
                 before = mobstats()
+                run("Legacyprobe","help knowalignment",b"area-defined alignment")
+                run("Legacyprobe","help frenzy",b"+1 hitroll")
+                run("Legacyprobe","help darkblessing",b"evil NPCs only")
                 run("Adminprobe", "zap evilprobe", b"You zap")
                 after = mobstats()
                 assert "Spell: 'darkblessing'" in after[0]
-                assert after[1:] == (before[1] - 10, before[2] + 1, before[3] + 1)
+                assert after[1:] == (before[1] + 10, before[2] + 1, before[3] + 1)
                 run("Adminprobe", "zap evilprobe", b"already active")
                 assert mobstats()[1:] == after[1:]
                 print("Know Alignment and Darkblessing: real wand dispatch, NPC output, "

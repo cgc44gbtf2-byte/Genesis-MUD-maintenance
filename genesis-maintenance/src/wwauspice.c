@@ -772,8 +772,11 @@ void do_bridgewalk (CHAR_DATA *ch, char *argument)
     char arg [MAX_INPUT_LENGTH];
     CHAR_DATA *victim;
     ROOM_INDEX_DATA *pRoomIndex;
-    long to_room;
+    int attempt;
      
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room || !argument
+        || strlen(argument)>=MAX_INPUT_LENGTH || ch->hit<=0
+        || ch->position<=POS_SLEEPING) return;
     argument = one_argument( argument, arg );
         
     if (IS_NPC(ch)) return;
@@ -785,7 +788,7 @@ void do_bridgewalk (CHAR_DATA *ch, char *argument)
     }
     if (get_auspice(ch, AUSPICE_GALLIARD) < 5)
     {
-        stc("You require Ragabash 5 to use Bridge Walker.\n\r",ch);
+        stc("You require Galliard 5 to use Bridge Walker.\n\r",ch);
         return;
     }
     if (arg[0] == '\0')
@@ -793,28 +796,44 @@ void do_bridgewalk (CHAR_DATA *ch, char *argument)
         stc( "Who do you wish to Bridge Walk to?\n\r", ch );
         return;
     }
-    if (IS_ITEMAFF(ch,ITEMA_BLISSFUL))
-	do_blissful(ch,"");
-
     if ( ( victim = get_char_world( ch, arg ) ) == NULL || victim->in_room == NULL || 
-     victim->level > 1000 || number_range(1,3) == 1 || victim->in_room == ch->in_room ||
+     victim->level > 1000 || victim==ch || victim->in_room == ch->in_room ||
      IS_SET(victim->in_room->room_flags, ROOM_SAFE) || 
      IS_SET(victim->in_room->room_flags, ROOM_PRIVATE) || 
      IS_SET(victim->in_room->room_flags, ROOM_SOLITARY) || 
      IS_SET(victim->in_room->room_flags, ROOM_NO_RECALL) || (!IS_NPC(victim) && 
-     !IS_EXTRA(victim, EXTRA_SUMMON) ))
+     !IS_EXTRA(victim, EXTRA_SUMMON) ) || IS_EXTRA(victim,EXTRA_ILLUSION))
+    {
+        stc("You cannot form a moon bridge to that target.\n\r",ch); return;
+    }
+    if (ch->fighting || victim->fighting || ch->fight_timer>0 || victim->fight_timer>0
+        || victim->hit<=0 || ch->embraced!=ARE_NONE || IS_EXTRA(ch,TIED_UP|EXTRA_OSWITCH)
+        || IS_MORE(ch,MORE_HEAD) || is_affected(ch,gsn_lineage_root)
+        || IS_AFFECTED(ch,AFF_CURSE|AFF_WEBBED)
+        || (ch->affected_by & (AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL))
+            != (victim->affected_by & (AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL))
+        || IS_SET(ch->in_room->room_flags|victim->in_room->room_flags,
+            ROOM_NO_RECALL|ROOM_NO_TELEPORT|ROOM_PRIVATE|ROOM_SOLITARY))
+    {
+        stc("Combat, restraint or room/plane protections block that bridge.\n\r",ch); return;
+    }
+    if (IS_ITEMAFF(ch,ITEMA_BLISSFUL)) do_blissful(ch,"");
+    if (number_range(1,3) == 1)
     {
 	stc( "A random moon fluctuation disrupts your bridge!\n\r", ch );
-	for ( ; ; )
+        pRoomIndex=NULL;
+	for (attempt=0;attempt<256;++attempt)
 	{
-	    to_room = number_range( 100, 16000 );
-	    pRoomIndex = get_room_index( to_room );
-	    if ( pRoomIndex != NULL )
-	    if ( !IS_SET(pRoomIndex->room_flags, ROOM_PRIVATE)
-	     &&   !IS_SET(pRoomIndex->room_flags, ROOM_SOLITARY)
-	     &&   !IS_SET(pRoomIndex->room_flags, ROOM_NO_TELEPORT))
-		break;
+	    pRoomIndex = get_room_index(number_range(100,16000));
+            if (pRoomIndex && !IS_SET(pRoomIndex->room_flags,
+                ROOM_SAFE|ROOM_PRIVATE|ROOM_SOLITARY|ROOM_NO_RECALL|ROOM_NO_TELEPORT)) break;
+            pRoomIndex=NULL;
 	}
+        if (!pRoomIndex)
+        {
+            stc("The moon bridge dissolves before finding an allowed landing.\n\r",ch);
+            WAIT_STATE(ch,8); return;
+        }
 
 	act( "$n slowly fades out of existence.", ch, NULL, NULL, TO_ROOM );
 	char_from_room( ch );

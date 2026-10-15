@@ -2856,6 +2856,8 @@ void do_shadowstep( CHAR_DATA *ch, char *argument )
     char      arg [MAX_INPUT_LENGTH];
     CHAR_DATA *victim;
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room || ch->hit<=0
+        || !argument || strlen(argument)>=MAX_INPUT_LENGTH) return;
     argument = one_argument( argument, arg );
 
     if (IS_NPC(ch)) return;
@@ -2887,7 +2889,8 @@ void do_shadowstep( CHAR_DATA *ch, char *argument )
     ||   victim == ch
     ||   victim->in_room == NULL
     ||   ch->in_room == NULL
-    ||   (IS_NPC(victim) && victim->pIndexData->vnum == MOB_VNUM_EYE)
+    ||   (IS_NPC(victim) && (!victim->pIndexData
+            || victim->pIndexData->vnum == MOB_VNUM_EYE))
     ||   victim->level > (get_disc(ch,DISC_OBTENEBRATION) * 140))
     {
 	send_to_char( "Nothing happens.\n\r", ch );
@@ -2921,6 +2924,17 @@ void do_shadowstep( CHAR_DATA *ch, char *argument )
     if (victim->wizard == ch)
     {  send_to_char("You can't step to that!", ch);
        return;
+    }
+    if (ch->fighting || victim->fighting || ch->fight_timer>0 || victim->fight_timer>0
+        || victim->hit<=0 || ch->embraced!=ARE_NONE || IS_EXTRA(ch,TIED_UP|EXTRA_OSWITCH)
+        || IS_MORE(ch,MORE_HEAD) || is_affected(ch,gsn_lineage_root)
+        || IS_AFFECTED(ch,AFF_CURSE|AFF_WEBBED)
+        || (ch->affected_by & (AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL))
+            != (victim->affected_by & (AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL))
+        || IS_SET(ch->in_room->room_flags|victim->in_room->room_flags,
+            ROOM_NO_RECALL|ROOM_NO_TELEPORT|ROOM_PRIVATE|ROOM_SOLITARY))
+    {
+        stc("Combat, restraint or room/plane protections block Shadow Step.\n\r",ch); return;
     }
 
     send_to_char("You step into the shadows.\n\r",ch);

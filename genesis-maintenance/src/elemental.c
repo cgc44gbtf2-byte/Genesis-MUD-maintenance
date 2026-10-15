@@ -102,7 +102,7 @@ void do_element( CHAR_DATA *ch, char *argument )
 	{
 	    stc("Sun - Element of Light and Protection.\n\r\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_SUN] == 0) stc("You have no skill with Sun.\n\r", ch);
-	    if (ch->pcdata->powers[ELEM_SUN] >= 1) stc("1 : Sun Bath        - Showers target with healing light.\n\r", ch);
+    if (ch->pcdata->powers[ELEM_SUN] >= 3) stc("3 : Sun Bath        - Showers target with healing light.\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_SUN] >= 5) stc("5 : Holy Aura       - Surrounds you with a holy aura.\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_SUN] >= 8) stc("8 : Solar Flash     - Blinds opponents.\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_SUN] >= 10) stc("10: Solar Light     - Grants you a halo of sunlight.\n\r", ch);
@@ -111,7 +111,7 @@ void do_element( CHAR_DATA *ch, char *argument )
 	{
 	    stc("Moon - Element of Darkness and Illusion.\n\r\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_MOON] == 0) stc("You have no skill with Moon.\n\r", ch);
-	    if (ch->pcdata->powers[ELEM_MOON] >= 1) stc("1 : Mirage Slice   - Summons an illusionary double to attack.\n\r", ch);
+    if (ch->pcdata->powers[ELEM_MOON] >= 3) stc("3 : Mirage Slice   - Summons an illusionary double to attack.\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_MOON] >= 5) stc("5 : Mirage Bodies  - Evade increase. <auto>\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_MOON] >= 8) stc("8 : Night Blade    - Life stealing double attack.\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_MOON] >= 10) stc("10: Spiral Moon    - Weakens with dark energy.\n\r", ch);
@@ -129,7 +129,7 @@ void do_element( CHAR_DATA *ch, char *argument )
 	{
 	    stc("Infinity - Element of Unity and the Void.\n\r\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_INFIN] == 0) stc("You have no skill with this element.\n\r", ch);
-	    if (ch->pcdata->powers[ELEM_INFIN] >= 1) stc("1 : Far Sight      - Watches from afar.\n\r", ch);
+    if (ch->pcdata->powers[ELEM_INFIN] >= 2) stc("2 : Far Sight      - Watches from afar.\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_INFIN] >= 3) stc("3 : Cloak of Sight - Hides you at a distance.\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_INFIN] >= 5) stc("5 : Infinite Sight - Opens your eyes to everything.\n\r", ch);
 	    if (ch->pcdata->powers[ELEM_INFIN] >= 8) stc("8 : Focus          - Skill increase. <auto>\n\r", ch);
@@ -507,6 +507,9 @@ void do_watertravel( CHAR_DATA *ch, char *argument)
     CHAR_DATA *victim;
     char arg[MIL];
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room || !argument
+        || strlen(argument)>=MAX_INPUT_LENGTH || ch->hit<=0
+        || ch->position<=POS_SLEEPING) return;
     argument = one_argument(argument, arg);
 
     if (!IS_ELEM(ch))
@@ -559,6 +562,17 @@ void do_watertravel( CHAR_DATA *ch, char *argument)
 	return;
     }
 
+    if (ch->fighting || victim->fighting || ch->fight_timer>0 || victim->fight_timer>0
+        || victim->hit<=0 || ch->embraced!=ARE_NONE || IS_EXTRA(ch,TIED_UP|EXTRA_OSWITCH)
+        || IS_EXTRA(victim,EXTRA_ILLUSION) || IS_MORE(ch,MORE_HEAD)
+        || is_affected(ch,gsn_lineage_root) || IS_AFFECTED(ch,AFF_CURSE|AFF_WEBBED)
+        || (ch->affected_by & (AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL))
+            != (victim->affected_by & (AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL))
+        || IS_SET(ch->in_room->room_flags|victim->in_room->room_flags,
+            ROOM_NO_RECALL|ROOM_NO_TELEPORT|ROOM_PRIVATE|ROOM_SOLITARY))
+    {
+        stc("Combat, restraint or room/plane protections block Water Travel.\n\r",ch); return;
+    }
     act("$n turns into a figure of water and vanishes in a spray of mist!!", ch, NULL, NULL, TO_ROOM);
     char_from_room(ch);
     char_to_room(ch, victim->in_room);

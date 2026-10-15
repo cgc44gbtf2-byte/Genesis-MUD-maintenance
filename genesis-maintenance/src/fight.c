@@ -273,6 +273,7 @@ void multi_hit( CHAR_DATA *ch, CHAR_DATA *victim )
     if (IS_DROW(ch) && get_drow(ch, DROW_BITE) && number_range(1, 4) == 1)
 	one_hit(ch, victim, TYPE_PIERCE, "spider fangs");
 
+    newclasses_extra_attack(ch, victim);
     return;
 }
 
@@ -343,6 +344,8 @@ long get_speed( CHAR_DATA *ch )
     if (IS_XTRA(ch, XTRA_ATONING)) count += 2;
     if (IS_XTRA(ch, XTRA_LIQUIFY)) count += 4;
     if (IS_XTRA(ch, XTRA_SLOW)) count += 1;
+    count -= cyborg_system_rank(ch, 1);
+    count -= newclasses_speed_bonus(ch);
 
     if (is_affected(ch, gsn_friction_curse)) count += 2;
     if (is_affected(ch, gsn_alter_weight)) count += 3;
@@ -465,6 +468,10 @@ void one_hit( CHAR_DATA *ch, CHAR_DATA *victim, long dt, char *message )
 	dam *= 1 + (.5 * char_stat(ch, STAT_STR));
     }
 
+    dam += newclasses_weapon_bonus(ch, victim, wield);
+    dam += crafted_weapon_bonus(ch, victim, wield);
+    dam += lineage_weapon_bonus(ch,victim,wield);
+    dam = cyborg_melee_damage(ch, dam);
     dam = dambonus(ch, victim, dam);
 
     max_dam = mod_damcap(ch, victim);
@@ -501,6 +508,8 @@ void one_hit( CHAR_DATA *ch, CHAR_DATA *victim, long dt, char *message )
 void damage( CHAR_DATA *ch, CHAR_DATA *victim, long dam, long dt, char *message )
 {
     if (victim == NULL || victim->position == POS_DEAD) return;
+    dam = cyborg_absorb_damage(victim, dam);
+    dam = lineage_absorb(victim,dam,dt);
 
     if (victim != ch)
     {
@@ -509,6 +518,7 @@ void damage( CHAR_DATA *ch, CHAR_DATA *victim, long dam, long dt, char *message 
 	 * Most other attacks are returned.
 	 */
 	if (is_safe(ch, victim)) return;
+affect_strip(ch,gsn_lineage_conceal);
 
 	if (victim->position > POS_STUNNED)
 	{
@@ -526,7 +536,8 @@ void damage( CHAR_DATA *ch, CHAR_DATA *victim, long dam, long dt, char *message 
 	/*
 	 * Damage modifiers.
 	 */
-	if ( IS_AFFECTED(ch, AFF_HIDE) )
+affect_strip(ch, gsn_parent_cloak);
+if ( IS_AFFECTED(ch, AFF_HIDE) )
 	{
 	    if (!can_see(victim,ch)) dam *= 1.5;
 	    send_to_char("You leap from your concealment.\n\r",ch);
@@ -965,6 +976,10 @@ long get_damcap( CHAR_DATA *ch )
 	switch (ch->class)
 	{
 	    default: break;
+    case CLASS_CYBORG:
+max_dam += UMIN(cyborg_system_rank(ch, 1), 4) * 450;
+if (cyborg_system_rank(ch, 1) >= 5) max_dam += 500;
+break;
 	    case CLASS_VAMPIRE:
 		max_dam += 200;
 		if (ch->pcdata->wolf > 0) max_dam += ch->beast;
@@ -1009,7 +1024,7 @@ long get_damcap( CHAR_DATA *ch )
 	}
     }
 
-    return max_dam;
+    return max_dam + newclasses_cap_bonus(ch);
 }
 
 
@@ -1068,8 +1083,11 @@ long get_soak( CHAR_DATA *victim )
 	{
 	    if (paf->type == gsn_brittle_bones)
 	    {
-		paf->modifier--;
-		if (paf->modifier == 0) affect_strip(victim, gsn_brittle_bones);
+if (paf->modifier > 0) paf->modifier--;
+if (paf->modifier <= 0) affect_strip(victim, gsn_brittle_bones);
+/* affect_strip may free this node (and duplicate saved records). Never
+ * advance through a freed affect or consume multiple charges per hit. */
+break;
 	    }
 	}
     }
@@ -1482,6 +1500,7 @@ void raw_kill( CHAR_DATA *victim, CHAR_DATA *ch )
     victim->carry_number = 0;
     victim->pcdata->atm  = 0;
     do_call(victim, "all");
+    newclasses_restore_passives(victim);
     do_autosave(victim, "");
     return;
 }
@@ -1536,6 +1555,7 @@ void behead( CHAR_DATA *victim, CHAR_DATA *ch )
     free_string(victim->morph);
     victim->morph = str_dup(buf);
     do_call(victim, "all");
+    newclasses_restore_passives(victim);
     do_autosave(victim, "");
     return;
 }

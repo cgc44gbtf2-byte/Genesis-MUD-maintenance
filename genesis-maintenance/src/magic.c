@@ -539,7 +539,7 @@ long legacy_protected_damage(CHAR_DATA *ch, CHAR_DATA *victim, long dam)
 
 void spell_armor( long sn, long level, CHAR_DATA *ch, void *vo )
 {
-    legacy_buff(sn, level, ch, vo, APPLY_AC, -20,
+    legacy_buff(sn, level, ch, vo, APPLY_AC, 20,
                 "A protective armor surrounds you.\n\r");
 }
 
@@ -1141,6 +1141,7 @@ void spell_dispel_magic( long sn, long level, CHAR_DATA *ch, void *vo )
     }
 
     while (victim->affected) affect_remove(victim, victim->affected);
+    newclasses_restore_passives(victim);
     REMOVE_BIT(victim->affected_by, AFF_FLAMING);
     REMOVE_BIT(victim->more, MORE_THINBLOOD);
 
@@ -1174,7 +1175,8 @@ void spell_earthquake( long sn, long level, CHAR_DATA *ch, void *vo )
 	vch_next = vch->next_in_room;
 
 	if (IS_NPC(ch) == IS_NPC(vch)) continue;
-	if (IS_AFFECTED(ch, AFF_FLYING)) continue;
+if (IS_AFFECTED(vch,AFF_FLYING) || IS_VAMPAFF(vch,VAM_FLYING)
+    || (!IS_NPC(vch) && vch->pcdata && IS_DRAGAFF(vch,DRAG_WINGSOUT))) continue;
 
 	damage(ch, vch, number_range(10 * level, 20 * level), TYPE_SPELL, "earthquake");
     }
@@ -2189,7 +2191,7 @@ void spell_sanctuary( long sn, long level, CHAR_DATA *ch, void *vo )
 
 void spell_shield( long sn, long level, CHAR_DATA *ch, void *vo )
 {
-    legacy_buff(sn, level, ch, vo, APPLY_AC, -20,
+    legacy_buff(sn, level, ch, vo, APPLY_AC, 20,
                 "A force shield forms around you.\n\r");
 }
 
@@ -2270,7 +2272,7 @@ void spell_sleep( long sn, long level, CHAR_DATA *ch, void *vo )
 
 void spell_stone_skin( long sn, long level, CHAR_DATA *ch, void *vo )
 {
-    legacy_buff(sn, level, ch, vo, APPLY_AC, -30,
+    legacy_buff(sn, level, ch, vo, APPLY_AC, 30,
                 "Your skin becomes hard as stone.\n\r");
 }
 
@@ -2348,7 +2350,27 @@ void spell_teleport( long sn, long level, CHAR_DATA *ch, void *vo )
 
 void spell_ventriloquate( long sn, long level, CHAR_DATA *ch, void *vo )
 {
-    return;
+    char source[MAX_INPUT_LENGTH];
+    char *text;
+    const unsigned char *p;
+    OBJ_DATA *obj;
+    (void)sn; (void)level; (void)vo;
+    if (!ch || !ch->in_room || !target_name) return;
+    text=one_argument(target_name,source);
+    if (!source[0] || !text[0] || strlen(text)>160
+        || !(obj=get_obj_here(ch,source)) || !can_see_obj(ch,obj)) {
+        stc("Use ventriloquate <visible object> <message up to 160 characters>.\n\r",ch);
+        return;
+    }
+    for (p=(const unsigned char *)text; *p; ++p)
+        if (*p<32 || *p==127) {
+            stc("An illusory voice cannot contain control characters.\n\r",ch); return;
+        }
+    /* Explicit illusion and object attribution: no forged player/staff speech,
+     * private input link or interpretation of message text as act formatting.
+     */
+    act("An illusory voice from $p says '$T'.",ch,obj,text,TO_CHAR);
+    act("An illusory voice from $p says '$T'.",ch,obj,text,TO_ROOM);
 }
 
 
@@ -2654,7 +2676,8 @@ void spell_darkblessing( long sn, long level, CHAR_DATA *ch, void *vo )
                     "A dark blessing strengthens and protects you.\n\r"))
     {
         legacy_add(sn, legacy_duration(level), victim, APPLY_DAMROLL, 1);
-        legacy_add(sn, legacy_duration(level), victim, APPLY_AC, -10);
+        /* Genesis adds positive armor to avoidance; this is a blessing. */
+        legacy_add(sn, legacy_duration(level), victim, APPLY_AC, 10);
     }
 }
 

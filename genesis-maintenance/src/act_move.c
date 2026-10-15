@@ -56,6 +56,9 @@ void	show_page	args( ( CHAR_DATA *ch, OBJ_DATA *book, long pnum, bool pagefalse 
 
 void move_char( CHAR_DATA *ch, long door )
 {
+    if (ch && is_affected(ch,gsn_lineage_root)) {
+        stc("Spectral bonds hold you in place.\n\r",ch); return;
+    }
     CHAR_DATA *fch;
     CHAR_DATA *fch_next;
     ROOM_INDEX_DATA *in_room;
@@ -131,7 +134,8 @@ void move_char( CHAR_DATA *ch, long door )
 
     if ( IS_SET(pexit->exit_info, EX_CLOSED)
     &&   pexit->keyword != NULL
-    &&   ((!IS_AFFECTED(ch, AFF_PASS_DOOR) && !is_affected(ch, gsn_pass_door))
+    &&   ((!IS_AFFECTED(ch, AFF_PASS_DOOR) && !is_affected(ch, gsn_pass_door)
+           && !is_affected(ch,gsn_lineage_pass) && !is_affected(ch,skill_lookup("lineage phase")))
           || IS_SET(pexit->exit_info, EX_PASSPROOF))
     &&   !IS_AFFECTED(ch, AFF_ETHEREAL)
     &&   !IS_AFFECTED(ch, AFF_SHADOWPLANE) )

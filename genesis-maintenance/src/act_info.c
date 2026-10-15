@@ -196,7 +196,7 @@ int stat_max( CHAR_DATA *ch, int stat )
 	case STAT_STR:
 	    if (IS_DRAGON(ch) || IS_HIGHLANDER(ch) || IS_WEREWOLF(ch)) max += 3;
 	    if (IS_NINJA(ch) || IS_VAMPIRE(ch)) max += 2;
-	    if (IS_DROW(ch) || IS_ELEM(ch) || IS_SORCERER(ch) || IS_MONK(ch)) max += 1;
+    if (IS_DROW(ch) || IS_ELEM(ch) || IS_SORCERER(ch) || IS_MONK(ch) || IS_PHOENIX(ch)) max += 1;
 	    break;
 	case STAT_DEX:
 	    if (IS_DROW(ch) || IS_NINJA(ch)) max += 3;
@@ -206,18 +206,52 @@ int stat_max( CHAR_DATA *ch, int stat )
 	case STAT_CON:
 	    if (IS_VAMPIRE(ch)) max += 3;
 	    if (IS_WEREWOLF(ch) || IS_DRAGON(ch) || IS_HIGHLANDER(ch)) max += 2;
-	    if (IS_ELEM(ch) || IS_NINJA(ch) || IS_MONK(ch) || IS_MAGE(ch)) max += 1;
+    if (IS_ELEM(ch) || IS_NINJA(ch) || IS_MONK(ch) || IS_MAGE(ch) || IS_PHOENIX(ch)) max += 1;
 	    break;
 	case STAT_INT:
 	    if (IS_SORCERER(ch) || IS_MAGE(ch)) max += 3;
-	    if (IS_DROW(ch) || IS_ELEM(ch)) max += 2;
+    if (IS_DROW(ch) || IS_ELEM(ch) || IS_PHOENIX(ch)) max += 2;
 	    if (IS_DRAGON(ch) || IS_NINJA(ch) || IS_VAMPIRE(ch)) max += 1;
 	    break;
 	case STAT_WIS:
-	    if (IS_MONK(ch) || IS_ELEM(ch)) max += 3;
+    if (IS_MONK(ch) || IS_ELEM(ch) || IS_PHOENIX(ch)) max += 3;
 	    if (IS_SORCERER(ch) || IS_MAGE(ch)) max += 2;
 	    if (IS_DROW(ch) || IS_DRAGON(ch) || IS_HIGHLANDER(ch) || IS_WEREWOLF(ch)) max += 1;
 	    break;
+    }
+    if (!IS_NPC(ch)) {
+        if (IS_CYBORG(ch)) {
+            static const int bonuses[] = {2, 2, 3, 2, 1};
+            if (stat >= STAT_STR && stat <= STAT_WIS) max += bonuses[stat];
+        }
+        if (ch->class == CLASS_MOOGLE) {
+            static const int bonuses[] = {0,1,0,2,2};
+            if (stat >= STAT_STR && stat <= STAT_WIS) max += bonuses[stat];
+        }
+        if (ch->class == CLASS_DEATHKNIGHT) {
+            static const int bonuses[] = {2,0,2,0,1};
+            if (stat >= STAT_STR && stat <= STAT_WIS) max += bonuses[stat];
+        }
+        if (ch->class==CLASS_GARGOYLE) {
+            static const int bonuses[]={2,0,3,0,1};
+            if(stat>=STAT_STR && stat<=STAT_WIS) max+=bonuses[stat];
+        }
+        if (ch->class==CLASS_KUEIJIN) {
+            static const int bonuses[]={1,1,2,2,2};
+            if(stat>=STAT_STR && stat<=STAT_WIS) max+=bonuses[stat];
+        }
+        if (ch->class==CLASS_WRAITH) {
+            static const int bonuses[]={0,2,1,2,2};
+            if(stat>=STAT_STR && stat<=STAT_WIS) max+=bonuses[stat];
+        }
+        if (IS_ANGEL(ch)) {
+            static const int bonuses[] = {1, 2, 1, 2, 3};
+            if (stat >= STAT_STR && stat <= STAT_WIS) max += bonuses[stat];
+        }
+        if (IS_DEMON(ch)) {
+            static const int bonuses[] = {3, 1, 3, 1, 1};
+            if (stat >= STAT_STR && stat <= STAT_WIS) max += bonuses[stat];
+        }
     }
     return max;
 }
@@ -1247,6 +1281,7 @@ void do_look( CHAR_DATA *ch, char *argument )
     &&   !IS_SET(ch->act, PLR_HOLYLIGHT)
     &&   !IS_ITEMAFF(ch, ITEMA_VISION)
     &&   !IS_VAMPAFF(ch, VAM_NIGHTSIGHT)
+     &&   !newclasses_nightvision(ch)
     &&   !IS_AFFECTED(ch, AFF_SHADOWPLANE)
     &&   !(ch->in_room != NULL && ch->in_room->vnum == ROOM_VNUM_IN_OBJECT
     &&   !IS_NPC(ch) && ch->pcdata->chobj != NULL
@@ -1458,6 +1493,12 @@ void do_look( CHAR_DATA *ch, char *argument )
     if ( ( victim = get_char_room( ch, arg1 ) ) != NULL )
     {
 	show_char_to_char_1( victim, ch );
+newclasses_describe(victim,ch);
+if (lineage_aspect(victim) != NULL) {
+    char aspect[160];
+    snprintf(aspect,sizeof(aspect),"Ancestral aspect: %s.\n\r",lineage_aspect(victim));
+    stc(aspect,ch);
+}
 	return;
     }
 
@@ -2010,6 +2051,12 @@ void do_help( CHAR_DATA *ch, char *argument )
     char argone[MIL];
     HELP_DATA *pHelp;
 
+    if (!ch || !argument) return;
+    if (strlen(argument) >= sizeof(argall))
+    {
+        stc("That help topic is too long.\n\r", ch);
+        return;
+    }
     if (argument[0] == '\0')
 	argument = "summary";
 
@@ -2025,11 +2072,18 @@ void do_help( CHAR_DATA *ch, char *argument )
 	strcat(argall, argone);
     }
 
-    for ( pHelp = help_first; pHelp != NULL; pHelp = pHelp->next )
+    /* Exact topics must win over an earlier prefix such as ARMORCLASS.
+     * Preserve abbreviation behavior only when no accessible exact topic exists.
+     */
+    for (pHelp = help_first; pHelp != NULL; pHelp = pHelp->next)
+        if (pHelp->level <= get_trust(ch) && is_name(argall, pHelp->keyword))
+            break;
+    if (!pHelp)
+        for (pHelp = help_first; pHelp != NULL; pHelp = pHelp->next)
+            if (pHelp->level <= get_trust(ch) && is_abbr(argall, pHelp->keyword))
+                break;
+    if (pHelp)
     {
-	if (pHelp->level > get_trust(ch)) continue;
-	if (!is_abbr(argall, pHelp->keyword)) continue;
-
 	if (pHelp->level >= 0 && str_cmp(argall, "imotd"))
 	{
 	    stc(pHelp->keyword, ch);
@@ -2085,6 +2139,10 @@ void do_who( CHAR_DATA *ch, char *argument )
 	else if (!str_cmp(arg, "ninja")) clas = CLASS_NINJA;
 	else if (!str_cmp(arg, "monk")) clas = CLASS_MONK;
 	else if (!str_cmp(arg, "elementalist")) clas = CLASS_ELEM;
+else if (!str_cmp(arg, "phoenix")) clas = CLASS_PHOENIX;
+else if (!str_cmp(arg, "cyborg")) clas = CLASS_CYBORG;
+else if (!str_cmp(arg, "angel")) clas = CLASS_ANGEL;
+else if (!str_cmp(arg, "demon")) clas = CLASS_DEMON;
 	else if (!str_cmp(arg, "dragon")) clas = CLASS_DRAGON;
 	else
 	{
@@ -2190,7 +2248,15 @@ void do_who( CHAR_DATA *ch, char *argument )
 		    else if (wch->status <= 24) class = "#6Mythical#n";
 		    else class = "#7Divine Master#n";
 		}
-		else if (IS_NINJA(wch))
+else if (IS_CYBORG(wch)) class = "#CCyborg#n";
+else if (wch->class == CLASS_MOOGLE) class = "#PMoogle#n";
+else if (wch->class == CLASS_DEATHKNIGHT) class = "#0Deathknight#n";
+else if (wch->class == CLASS_GARGOYLE) class = "#7Gargoyle#n";
+else if (wch->class == CLASS_KUEIJIN) class = "#RKuei-jin#n";
+else if (wch->class == CLASS_WRAITH) class = "#0Wraith#n";
+else if (IS_ANGEL(wch)) class = "#WAngel#n";
+else if (IS_DEMON(wch)) class = "#RDemon#n";
+else if (IS_NINJA(wch))
 		{
 		    if (wch->status <= 0) class = "#rShinobi#n";
 		    else if (wch->status <= 4) class = "#2Genin#n";
@@ -2210,7 +2276,11 @@ void do_who( CHAR_DATA *ch, char *argument )
 		    else if (wch->status <= 24) class = "#6Ultrin#n";
 		    else class = "#7Quarlsharess#n";
 		}
-		else if (IS_ELEM(wch))
+else if (IS_PHOENIX(wch))
+{
+    class = "#RPhoenix#n";
+}
+else if (IS_ELEM(wch))
 		{
 		    if (wch->status <= 0) class = "#rSleeper#n";
 		    else if (wch->status <= 4) class = "#2Student#n";

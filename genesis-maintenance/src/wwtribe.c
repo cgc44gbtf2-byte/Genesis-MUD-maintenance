@@ -1558,6 +1558,7 @@ void do_fetishdoll( CHAR_DATA *ch, char *argument )
 {
     CHAR_DATA *victim;
     OBJ_DATA  *obj;
+    OBJ_INDEX_DATA *doll_proto;
     char       buf [MAX_INPUT_LENGTH];
     char       arg [MAX_INPUT_LENGTH];
     char     part1 [MAX_INPUT_LENGTH];
@@ -1634,7 +1635,7 @@ void do_fetishdoll( CHAR_DATA *ch, char *argument )
 	return;
     }
 
-    sprintf(part2,obj->name);
+    format_buffer(part2,sizeof(part2),"%s",obj->name);
 
     if ( str_cmp(part1,part2) )
     {
@@ -1643,12 +1644,17 @@ void do_fetishdoll( CHAR_DATA *ch, char *argument )
 	return;
     }
 
+    doll_proto=get_obj_index(OBJ_VNUM_VOODOO_DOLL);
+    if (!doll_proto)
+    {
+        stc("The native fetish-doll template is unavailable.\n\r",ch); return;
+    }
     act("$p vanishes from your hand in a puff of smoke.", ch, obj, NULL, TO_CHAR);
     act("$p vanishes from $n's hand in a puff of smoke.", ch, obj, NULL, TO_ROOM);
     obj_from_char(obj);
     extract_obj(obj);
 
-    obj = create_object( get_obj_index( OBJ_VNUM_VOODOO_DOLL ), 0 );
+    obj = create_object(doll_proto,0);
 
     sprintf(buf,"%s voodoo doll",victim->name);
     free_string(obj->name);

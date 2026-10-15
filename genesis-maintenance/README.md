@@ -4,6 +4,48 @@ This is a legacy C/telnet MUD server and its area data. It is not a web app.
 This maintenance copy intentionally excludes the original compiled binary,
 object files, server logs, player backups, and private notes.
 
+## Class kits and current verification
+
+The roster now has **19 standalone parent identities**: the fourteen described
+below plus Gargoyle, Kuei-jin, Deathknight, Moogle and Wraith. The five added
+kits provide 113 active commands, independent progression, bounded resource
+records and native combat/visibility/movement hooks. See `CLASS_GUIDE.md`
+for every class and complete new-kit command lists. These are conservative
+Genesis conversions/designs, not a promise of literal upstream parity or
+final PvP balance.
+
+This source includes playable standalone Angel, Cyborg and one Demon, plus
+Phoenix and the original ten classes. Use `autoclass angel|cyborg|demon` after
+meeting the existing awake and new-class base-stat requirements, then
+`angel`, `cyborg` or `demon` for commands and costs. The expanded inventory
+has 33 Angel, 71 Demon and 60 Cyborg entries implemented; these counts include
+variants and management systems, not a finalized selectable-ability quota.
+See `CLASS_KIT_STATUS.md`, `CLASS_GUIDE.md` and `CYBORG_KIT.md` for current
+commands, evidence and limitations. Historical implementation notes describe
+earlier stages; they are not the current completion checklist.
+
+Phoenix has eight independently designed powers and its own mastery track;
+see `PHOENIX_IMPLEMENTATION.md`. Existing class IDs and saved power arrays
+are not renumbered. Cyborg uses optional, bounded version-1 records; old
+player files remain readable.
+
+The `hybrid` command is still a read-only parent/inventory preview.
+Playable hybrids, pure-class ascension and path respecs are **not implemented**.
+The current future design is two parents with all of both kits, not the
+superseded 75%-selection proposal. All 171 named pairs have stable registry
+identities and read-only previews; see `HYBRID_ROSTER.md`.
+See `PARENT_FRAMEWORK.md` for the foundation and remaining work.
+The finalized maintenance-only ZIP remains a separate, unchanged release.
+
+The current code passed 13 linked ASan/UBSan suites, seven isolated native
+gameplay regression groups, a strict GNU89 build and a fresh-extraction build.
+The help audit covers 398/398 registered legacy topics. The native help probe
+checked 266 entries / 583 exact topics and aliases, plus semantic checks for
+the Elemental and Abilitystatus pages. These are scoped checks, not a promise
+that every legacy argument variant, balance rule or saved-state combination
+has been tested. The broader legacy matrix remains open; see
+`LEGACY_VERIFICATION.md` and `CLASS_KIT_STATUS.md`.
+
 ## Build
 
 On Linux, install a C compiler, GNU Make, and the system development package
@@ -57,6 +99,18 @@ python3 tests/smoke_runtime.py
 Clean again before switching back to a normal build. These are focused regression
 checks, not a complete gameplay or security audit.
 
+Run all 13 linked gameplay sanitizer probes in one isolated build, plus the
+separate component-codec and resolve probes:
+
+```sh
+sh tests/test-combat-system.sh all
+sh tests/test-cyborg-core.sh
+sh tests/test-resolve.sh
+```
+
+The extended class suite also exercises real login persistence and class
+clearing for Angel/Demon physical effects and automatic passive bonuses.
+
 ## Class ability restoration
 
 The recoverable class abilities have been repaired and connected to the
@@ -100,8 +154,11 @@ The subsequent `LEGACY_SPELL_RESTORATION.md` documents 20 reconstructed
 item/NPC spell effects, restored spell-pill activation, green-potion
 targeting, and saved door-barrier loading. The final three are NPC-only
 Know Alignment, a small timed Frenzy offensive buff, and Darkblessing for evil
-NPCs only. Ventriloquate remains disabled; spell indices, slots and level-99
-casting restrictions are unchanged. No hybrid-class feature is included.
+NPCs only. Darkblessing applies +1 hitroll, +1 damroll and +10 armor according
+to Genesis's positive-armor convention; NPC avoidance remains level-based.
+Ventriloquate now provides safe, attributed object-based speech. Spell indices,
+slots and level-99 casting restrictions are unchanged. The hybrid command is
+a read-only preview, not playable multiclassing.
 Run its focused sanitizer and disposable live-server tests with:
 
 ```sh
@@ -109,7 +166,19 @@ sh tests/test-combat-system.sh legacy
 python3 tests/legacy_spells.py
 ```
 
-## Run locally
+## Connect
+
+The supplied game address is **159.223.164.151**, port **4000**.
+Use a MUD client or:
+
+```sh
+telnet 159.223.164.151 4000
+```
+
+This documents the supplied endpoint; it is not a claim of verified uptime,
+server configuration or deployment. See `MUD_LISTING.txt` for the listing draft.
+
+## Run locally or on your own host
 
 ```sh
 PORT=4000 ./run.sh
@@ -120,6 +189,9 @@ The launcher creates the player, backup, and log directories if they are missing
 It loads area files relative to `area/` and stores player records in `player/`.
 The default port is 4000; choose an unprivileged port above 1024. Back up
 player records and mutable area files before upgrades.
+Run as an unprivileged account. Before allowing public registrations, follow
+`ADMIN_BOOTSTRAP.md`: the exact case-insensitive name Admin is the only
+highest-rank `relevel` bootstrap identity and must be secured.
 
 ## Before public hosting
 

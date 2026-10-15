@@ -1,7 +1,8 @@
 #HELPS
 
 0 Classes~
-There are 10 available classes.  For more information on an individual class,
+There are 19 available standalone classes. For the current kits use HELP KITS.
+For more information on an individual class,
 refer to the help file(help dragon, help drow, etc...).  If you need to know
 anything not listed in these files, ask an experienced player or an imm.
 To be classes, simply type autoclass.
@@ -16,6 +17,18 @@ Dragon       - Mythical beasts who soar through the sky.
 #LSorcerer#n     - Wielders of the very fabric of reality.
 #rVampire#n      - Undead denizens of the night.
 #oWerewolf#n     - Shapeshifting servants of Gaia.
+Angel        - Celestial powers, flight and reference-derived gifts.
+Cyborg       - Components, implants, systems and demolitions.
+Demon        - Unified infernal powers, shapes, souls and gifts.
+Phoenix      - Fire, wings, recovery and rebirth-themed native powers.
+Gargoyle     - Stone mastery, resilience and Visceratika.
+Kuei-jin     - Independent Chi, Dharma, Shintai and disciplines.
+Deathknight  - Genesis-native unholy combat and soul powers.
+Moogle       - Genesis-native support, fortune, dances and Pom attacks.
+Wraith       - Independent Arcanoi and adapted spirit powers.
+
+These are standalone parent classes. The 171 named hybrid combinations
+are read-only registry previews, not playable conversions: HELP HYBRIDROSTER.
 
 Related Helps: Reqs, Clans, Leaders, and 'help <class name>'.
 ~
@@ -166,7 +179,13 @@ Drow Powers
 Related Helps: Prayer, and Class.
 ~
 
-0 Prayer~
+0 Prayer DROWGIFTS~
+Syntax: prayer <room Drow> <power>
+Buys a native Drow gift using the caster's Drow points. You may train
+yourself, or a Drow of the same nonempty house. Use the power's joined
+name (for example SkipDisc or PoisonImmunity), not its description.
+Already learned gifts and Speed above rank 4 are rejected without cost.
+
 Skip disc         (fly)         {syntax: skipdisc}      DP cost: 5000
 Spider eyes       (scry)        {syntax: scry}          DP cost: 7500
 Acid bolt         (aggy attack) {syntax: acidbolt}      DP cost: 5000
@@ -228,8 +247,8 @@ Fire - Element of Strength and Ferocity.
 
 Water - Element of Order and Conformity.
 1 : Icicle Storm  - Conjures a barrage of icicles.
-5 : Aqua Barrier  - Surrounds you with a barrier of water.
-8 : Water Travel  - Allows quick travel.
+5 : Water Travel  - Allows quick travel.
+8 : Aqua Barrier  - Surrounds you with a barrier of water.
 10: Water Control - Stuns opponents.
 
 Earth - Element of Toughness.
@@ -249,13 +268,13 @@ Related Helps: Elementalist, and Elements2
 
 0 Elements2~
 Sun - Element of Light and Protection.
-1 : Sun Bath        - Showers target with healing light.
+3 : Sun Bath        - Showers target with healing light.
 5 : Holy Aura       - Surrounds you with a holy aura.
 8 : Solar Flash     - Blinds opponents.
 10: Solar Light     - Grants you a halo of sunlight.
 	
 Moon - Element of Darkness and Illusion.
-1 : Mirage Slice   - Summons an illusionary double to attack.
+3 : Mirage Slice   - Summons an illusionary double to attack.
 5 : Mirage Bodies  - Evade increase. <auto>
 8 : Night Blade    - Life stealing double attack.
 10: Spiral Moon    - Weakens with dark energy.
@@ -267,7 +286,7 @@ Time - Element of Travel and Moments.
 10: Slow           - Slows target.
 
 Infinity - Element of Unity and the Void.
-1 : Far Sight      - Watches from afar.
+2 : Far Sight      - Watches from afar.
 3 : Cloak of Sight - Hides you at a distance.
 5 : Infinite Sight - Opens your eyes to everything.
 8 : Focus          - Skill increase. <auto>
@@ -397,7 +416,7 @@ Related Helps: Mages, and Spheres.
 Level 1: Detect Weakness: Break/Damcap bonuses (auto)
 Level 2: Beginner's Luck: Allows the caster to hit automaticly the first attacks in the next combat.
 	Syntax: beginnersluck (quintessence)
-Level 4: Brittle Bones: Cuts through the opponents soak for a number of attacks.
+Level 3: Brittle Bones: Cuts through the opponent's soak for a number of attacks.
 	Syntax: brittlebones (target) (quintessence)
 Level 5: Mutate Ephemera: Paralized the opponent, and twists fate to send their attacks back against them.
 	Syntax: mutateephemera (target) (quintessence)
@@ -410,7 +429,7 @@ Level 1: Nightsight: Gives nightsight
 	Syntax: nightsight
 Level 2: Electrical Chaos: One target damage spell.
 	Syntax: electricalchaos (target) (quintessence)
-Level 4: Friction Curse: Slows down an opponent and converts their movement into damage.
+Level 3: Friction Curse: Slows down an opponent and converts attacks into recoil damage.
 Syntax: friction (target) (quintessence)
 Level 5: Inferno: Area affect damage spell that causes flames.
 	Syntax: inferno (quintessence)
@@ -423,7 +442,7 @@ Level 1: Readaura
 	Syntax: readaura (target)
 Level 2: Mage Heal: A one target healing spell.
 Syntax: mageheal (target) (quintessence)
-Level 4: Better Body: Increases one person's ability to fight.
+Level 3: Better Body: Temporarily raises one derived stat for yourself or a group member.
 Syntax: betterbody (target) (str/dex/con/int/wis) (quintessence)
 Level 5: Polymorph Other: Polymorph's the target into a pig, removing the benefits from any form they were in.
 	Syntax: polymorphother (target) (quintessence)
@@ -436,9 +455,9 @@ Level 1: Analyze: Identify
 	Syntax: analyze (target)
 Level 2: Shatter Wall: Destroys walls.
 	Syntax: shatterwall (direction)
-Level 4: Scuplture: Creates walls.
+Level 3: Sculpture: Creates walls.
 	Syntax: sculpture (direction)
-Level 5: Alter Weight: Increases the gravity around your target, crushing them, and then slowing their actions.
+Level 5: Alter Weight: Gravity damage and a timed attack-delay penalty.
 Syntax: alterweight (target) (quintessence)
 
 Related Helps: Mages, and Spheres.
@@ -449,7 +468,7 @@ Level 1: Heighten
 	Syntax: heighten
 Level 2: Scry
 	Syntax: scry (target)
-Level 4: Shield: Prevents scry from working on you. (Mages do no regenerate with shield activated)
+Level 3: Shield: Prevents scry from working on you. (Mages do not regenerate with shield activated)
 	Syntax shield
 Level 5: Invis: Blocks your images from other's minds.
 Syntax: mageinvis (quintessence)
@@ -462,7 +481,7 @@ Level 1: Heart's Blood: Allows you to take damage in order to put more quintesse
 	Syntax: heartsblood
 Level 2: Holy Smote: Creates a sword of quintessence that fights for you.
 	Syntax: holysmote
-Level 4: Enchant Weapon: Channels quintessence into a weapon making it cause aggrivated damage.
+Level 3: Enchant Weapon: Channels quintessence into a weapon making it cause aggravated damage.
 Syntax: mageenchant (target)
 Level 5: Paradox Ward: Prevents against the damage from a paradox backlash.
 	Syntax: ward (quintessence)
@@ -475,7 +494,7 @@ Level 1: Spirit Sence: Allows you to see into the umbra.
 Syntax: spiritsense
 Level 2: Spirit Caress: Allows you to reach into the umbra and make one attack.
 	Syntax: spiritcaress
-Level 4: Step Sideways: Allows you to enter and leave the umbra.
+Level 3: Step Sideways: Allows you to enter and leave the umbra.
 	Syntax: stepsideways (quintessence)
 Level 5: Break Dreamshell: Allows you to enter and leave the deep umbra.
 	Syntax: breakdreamshell (quintessence)
@@ -486,7 +505,7 @@ Related Helps: Mages, and Spheres.
 0 Timesphere~
 Level 1: Time Sense: Lowers Speed (auto)
 Level 2: Future Sense: Raises Avoid (auto)
-Level 4: Contingency: Prepares a spell to be cast when you enter combat.
+Level 3: Contingency: Prepares a spell to be attempted when you enter combat.
 	contingency (spell)
 Level 5: Doublecast: Allows you to cast anouther mage spell twice.
 	doublecast (the spell exactly as you would cast it normally, including targets and quintessence)
@@ -519,7 +538,7 @@ Mantras - A myriad of non-combat abilities.
 3: Rejuvenation     - Gives regeneration. (auto)
 4: Healing Touch    - Allows you to heal with a touch. (touch)
 5: Almighty Favor   - Grants a blessing. (almighty/almighty group)
-6: Spirit Guardian  - Summons a guardian. (spiritguardian)
+6: Spirit Guardian  - Calls native spirit protection. (spiritguardian)
 7: Celestial Path   - Instantaneous travel. (celestial)
 8: Cloak of Life    - Saves you from death. (lifecloak)
 
@@ -535,12 +554,12 @@ Arts - Combat abilities and styles.
 
 Techs - Fighting techniques and powers.
 1: Repeating Fist  - Multihit technique. (repeat)
-2: Aura Shot       - Life stealing attack. (aura)
+2: Aura Shot       - Life stealing attack. (aurashot)
 3: Blitz           - Area affect damage. (blitz)
 4: Invite Beast    - Possesses weak creatures. (invite)
 5: Crippling Kick  - Mana burning kick. (cripple)
 6: Dark Blaze      - Blinds your foes. (darkblaze)
-7: Stun Fist       - Damaging stun attack. (stun)
+7: Stun Fist       - Damaging stun attack. (stunfist)
 8: Chimera Form    - Powerful form. (chimera)
 
 Related Helps: Monk.
@@ -576,7 +595,7 @@ Sora - *Heaven*.  Each level adds 25 to max Michi.
 Chikyu - *Earth*.  Each level adds damage/avoid.
 1 : Mienaku     - "Ninja VANISH!" - TMNT. (mienaku) <20 ki>
 4 : Orimasu     - Increased focus improves healing rates. (orimasu) <50 ki>
-6 : Gunaya      - Entangles your opponent in sticky strands of webbing. (web) <10 ki>
+8 : Gunaya      - Entangles your opponent in sticky strands of webbing. (web) <10 ki>
 8 : Tsumazuku   - Leaves opponents unable to respond to your attack. (tsumazuku)
 10: HaraKiri    - Increases power through pain. (harakiri)
 
@@ -597,9 +616,9 @@ rather than taught at a later age, and they enjoy complete flexibility with
 their spells.  In addition to being able to write their own spells, Sorcerers
 have a few extra "basic" spells, and can cast spells faster than normal as
 their colors improve.
-** This is a "Book Mage" type class, HOWEVER, it is EXTREMELY MODIFIED.  Do
-    NOT expect Mage Primers or old spells to work.  Work with what's listed
-    in these helpfiles and nothing else.
+This is Genesis book magic, not an interchangeable recipe format from
+other MUDs. Use SORCCREATE STARTER for the one-time Genesis primer with
+instructions and working starter spells; see HELP BOOKMAGIC.
 
 Commands:
 Colors     - Trains a color.
@@ -764,7 +783,7 @@ hp   (color * 250)  damroll (color * 10)  armor (color * 10)
 mana (color * 250)  hitroll (color * 10)  save  (color * 1)
 Affect:
 blind        umbra        sanct        faerie.fire  curse
-flaming      poison       ethereal     sleep        web
+flaming      poison       sleep        web
 
 Related Helps: Chant, Writing, Damage Spells, Action Spells, and Sorcerer.
 ~
@@ -807,10 +826,10 @@ Garou Commands
  Advance   - Raises Garou ranks.
  Gnosis    - Raises your permanent Gnosis.  Used to power gifts.  Opposite of
             Rage.  Represents a Wolf's spiritual energies.
- Rage      - Raises your permanent Rage.  Used to power gifts.  Opposite of
-            Gnosis.  Represents a Wolf's primal Beast.
+ Rage      - Raises current rage and can trigger the native wolf form.
+            It is not permanent Rage training.
  Shift     - Allows you to change your form.
- Tribegift - Selects your chosen gifts.  These gifts raise to 5 instead of 3.
+ Tribegifts- Selects preferred gifts. These cap at 5; other tracks cap at 4.
  Wwarmor   - Wolf EQ each piece costs 400 qps, 100 primal.
  Wwgifts   - Shows a list of all the gifts you have available.
  Wwpowers  - Lists all the commands (NOT powers) available to you.
@@ -841,8 +860,9 @@ position, and requires a Challenge(help challenge) to attain.  The ranks are,
 in order, Cliath, Fostern, Adren, Athro, and Elder.  Ranks 1 through 4 all
 give a myriad of small bonuses to help you in combat.
 
-In order to attain to each rank, you must have a Gnosis and Rage of 50 +
-(10 * current rank) and (500 * current rank) mobkills.
+ADVANCE requires 20 times your current rank in completed quests and
+1000 times your current rank in lifetime mob kills. Neither counter is
+spent. Gnosis and Rage are not the command's rank prerequisites.
 
 Related Helps: Werewolf.
 ~
@@ -880,6 +900,7 @@ Related Helps: Breeds, and Werewolf.
 2: Sense Prey - Allows you to locate your quarry. <scry>
 3: Catfeet - Improves balance. <auto>
 4: Sense the Unnatural - Allows you to scry through shield. <auto>
+   Beast Life - Toggles native animal mastery. <beastlife>
 5: Elemental Gift - Calls the elemental spirits forth. <elemental>
 
 Related Helps: Breeds, and Werewolf.
@@ -965,10 +986,10 @@ Related Helps: Breeds, Auspices, 'help <tribe name>', and Werewolf.
 ~
 
 0 'Black Furies'~
-1: Breath of the Wyld - Heals many people. <breathwyld>
-2: Coup de Grace - Charge into combat for extra power. <auto>
+1: Breath of the Wyld - Heals the caster. <breathwyld>
+2: Curse of Aeolus - Outdoors-only fog control. <aeolus/fog>
 3: Visceral Agony - Claws cause poison. <auto>
-4: Body Wrack - Causes immense pain. <bodywrack>
+5: Body Wrack - Causes immense pain. <bodywrack>
 5: Wyld Warp - Summons a group of chaotic Wyld-spirits. <wyldwarp>
 
 Related Helps: Tribes, and Werewolf.
@@ -986,9 +1007,9 @@ Related Helps: Tribes, and Werewolf.
 
 0 'Children of Gaia'~
 1: Calm - Allows a quick calming of rage. <calm>
-2: Dazzle - Stuns your opponent. <dazzle>
-3: Spirit Friend - Summons a spirit to guide you. <spiritguardian>
-4: Strike the Air - +Avoid, -Break? <striketheair>
+3: Dazzle - Disrupts your opponent. <dazzle>
+4: Spirit Friend - Calls native spirit-guardian protection. <spiritguardian>
+4: Strike the Air - Native defensive gift. <striketheair>
 5: Halo of Sun - A halo of pure Sunlight surrounds you. <halosun>
 
 Related Helps: Tribes, and Werewolf.
@@ -998,14 +1019,14 @@ Related Helps: Tribes, and Werewolf.
 1: Faerie Light - Creates a ball of light. <faerielight>
 2: Howl of the Banshee - Makes all run in fright. <howlbanshee>
 3: Faerie Kin - Summons a random Fae spirit. <faeriekin>
-4: Balor's Gaze - Causes pain in target. <balorsgaze>
+5: Balor's Gaze - Causes pain in target. <balorsgaze>
 5: Gift of the Spriggan - Makes you enormous. <spriggan>
 
 Related Helps: Tribes, and Werewolf.
 ~
 
 0 'Get of Fenris'~
-1: Visage of Fenris - .<blah>
+1: Visage of Fenris - Increases the native damage cap by 100. <auto>
 2: Halt the Coward's Flight - Prevents retreat. <auto>
 3: Might of Thor - Increases damage. <thor>
 4: Scream of Gaia - Stuns everyone. <scream>
@@ -1036,9 +1057,9 @@ Related Helps: Tribes, and Werewolf.
 
 0 'Shadow Lords'~
 1: Fatal Flaw - Exploits weaknesses to increase damage. <auto>
-2: Clap of Thunder - A thunder clap stuns foes. <auto>
-3: Paralyzing Stare - Prevents opponents from reacting. <paralyze>
-4: Open Wounds - Blah. <auto>
+2: Clap of Thunder - Native room thunder attack. <clapthunder>
+3: Paralyzing Stare - Disrupts opponents. <paralyzingstare>
+4: Dominator - Steals eligible targets' rage/blood energy. <dominator>
 5: Obedience - Forces others to obey you. <obedience>
 
 Related Helps: Tribes, and Werewolf.
@@ -1058,7 +1079,7 @@ Related Helps: Tribes, and Werewolf.
 1: Falcon's Grasp - Renders you immune to disarm. <auto>
 2: Lambent Flame - Makes Garou hard to hit. <auto>
 3: Wrath of Gaia - Forces servants of the Wyrm to flee. <wrath>
-4: Mastery - Compels obedience in other Garou. <mastery>
+5: Mastery - Attempts restricted commands on other Garou. <mastery>
 5: Luna's Avenger - Transformation into living Silver. <avenger>
 
 Related Helps: Tribes, and Werewolf.
@@ -1069,7 +1090,7 @@ Related Helps: Tribes, and Werewolf.
 2: Spirit of the Fish - Grants water breathing. <auto>
 3: Spirit of the Bird - Grants flight. <auto>
 4: Invisibility - Renders you invisible. <invisibility>
-5: Fetish Doll - Creates a Voodoo doll. <fetish>
+5: Fetish Doll - Creates a Voodoo doll from a matching held body part. <fetishdoll>
 
 Related Helps: Tribes, and Werewolf.
 ~
@@ -1336,7 +1357,7 @@ Related Helps: Disciplines, and Vampire.
 [****] 	Bloodagony - Poisons a weapon.
 [*****]	Spit - Shoots acid at your victim.
 [******] Thinblood - Thins the victims blood, causing them to be unable to regenerate.
-[*******] Leech - Drains a victims blood.
+[******] Leech - Drains a victims blood.
 
 Related Helps: Disciplines, and Vampire.
 ~

@@ -180,7 +180,7 @@ if (get_auspice(ch, AUSPICE_PHILODOX) >= 2) strcat(buf, " Strengthofpurpose[pass
     {
 	strcpy(buf, "Black Furies: Breathwyld");
 if (get_tribe(ch, TRIBE_BLACK_FURIES) >= 2) strcat(buf, " Aeolus");
-if (get_tribe(ch, TRIBE_BLACK_FURIES) >= 4) strcat(buf, " Bodywrack");
+if (get_tribe(ch, TRIBE_BLACK_FURIES) >= 5) strcat(buf, " Bodywrack");
 	strcat(buf, ".\n\r");
 	stc(buf, ch);
     }

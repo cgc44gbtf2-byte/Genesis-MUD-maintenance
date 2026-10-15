@@ -199,6 +199,8 @@ void fwrite_char( CHAR_DATA *ch, FILE *fp )
     fprintf( fp, "Better_timer %li\n",  ch->better_body_timer	);
     fprintf( fp, "Fight_timer  %li\n",  ch->fight_timer         );
     fprintf( fp, "Slow_timer   %li\n", ch->slow_timer);
+    if (ch->pcdata->sorcerer_starter) fprintf(fp,"SorcStarter 1\n");
+    if (ch->pcdata->sorcerer_chaos==1) fprintf(fp,"SorcStyle 1\n");
     fprintf( fp, "Liquify_timer %li\n", ch->liquify_timer);
     fprintf( fp, "Atoningwinds_timer %li\n", ch->atoningwinds_timer);
     fprintf( fp, "Home         %li\n",  ch->home		);
@@ -318,6 +320,41 @@ void fwrite_char( CHAR_DATA *ch, FILE *fp )
 	    ch->pcdata->powers[12],ch->pcdata->powers[13],ch->pcdata->powers[14],
 	    ch->pcdata->powers[15],ch->pcdata->powers[16],ch->pcdata->powers[17],
 	    ch->pcdata->powers[18],ch->pcdata->powers[19]);
+        /* Old characters' empty Cyborg state adds no record or power grants. */
+        if (ch->pcdata->cyborg.permitted || ch->pcdata->cyborg.installed
+            || ch->pcdata->cyborg.humanity_limit || ch->pcdata->cyborg.humanity)
+        {
+            if (cyborg_core_write_player(&ch->pcdata->cyborg, fp) != CY_OK)
+                bug("Invalid CyborgCore state was not saved.", 0);
+        }
+        if (ch->pcdata->cyber.nanites || ch->pcdata->cyber.rifle
+            || ch->pcdata->cyber.factory)
+            if (cyborg_runtime_write_player(&ch->pcdata->cyber, fp) != CY_OK)
+                bug("Invalid CyborgRuntime state was not saved.", 0);
+        if (ch->pcdata->cybernetics.face || ch->pcdata->cybernetics.limbs
+            || ch->pcdata->cybernetics.body || ch->pcdata->cybernetics.demolition
+            || ch->pcdata->cybernetics.bombs || ch->pcdata->cybernetics.armed
+            || ch->pcdata->cybernetics.bionic)
+            if (cyborg_systems_write_player(&ch->pcdata->cybernetics, fp) != CY_OK)
+                bug("Invalid CyborgSystems state was not saved.", 0);
+        if (ch->pcdata->lineage.parent) {
+            if (lineage_class_parent(ch)!=ch->pcdata->lineage.parent
+                || !lineage_state_write(&ch->pcdata->lineage,fp))
+                bug("Invalid LineageClass state was not saved.",0);
+        }
+        if (ch->pcdata->crafted.parent || ch->pcdata->crafted.rank || ch->pcdata->crafted.energy) {
+            if (crafted_class_parent(ch) != ch->pcdata->crafted.parent
+                || !crafted_state_write(&ch->pcdata->crafted,fp))
+                bug("Invalid CraftedClass state was not saved.",0);
+        }
+        if (ch->pcdata->legacy.souls || ch->pcdata->legacy.willing
+            || ch->pcdata->legacy.gifts || ch->pcdata->legacy.warps
+            || ch->pcdata->legacy.patron[0] || ch->pcdata->legacy.grants[0]
+            || ch->pcdata->legacy.grants[1]) {
+            if (!reference_legacy_write(&ch->pcdata->legacy, fp))
+                bug("Invalid ParentLegacy state was not saved.", 0);
+            else newclasses_write_grants(ch, fp);
+        }
 	fprintf( fp, "Blood        %li %li\n",
 	    ch->blood[0],
 	    ch->blood[1]);
@@ -424,6 +461,9 @@ void fwrite_obj( CHAR_DATA *ch, OBJ_DATA *obj, FILE *fp, long iNest )
     fprintf( fp, "WearLoc      %li\n",	obj->wear_loc		     );
     fprintf( fp, "ItemType     %li\n",	obj->item_type		     );
     fprintf( fp, "Weight       %li\n",	obj->weight		     );
+    if (obj->reference_enchant > 0 && obj->reference_enchant <= 15
+        && obj->reference_ticks > 0 && obj->reference_ticks <= 12)
+        fprintf(fp, "RefWeapon 1 %ld %ld\n", obj->reference_enchant, obj->reference_ticks);
     if (obj->spectype != 0)
     	fprintf( fp, "Spectype     %li\n",	obj->spectype	     );
     if (obj->specpower != 0)
@@ -1289,6 +1329,32 @@ void fread_char( CHAR_DATA *ch, FILE *fp )
 	    break;
 
 	case 'C':
+            if (!str_cmp(word,"CraftedClass")) {
+                if (!crafted_state_read(&ch->pcdata->crafted,fp))
+                    bug("Invalid CraftedClass record was reset.",0);
+                fMatch=TRUE; break;
+            }
+            if (!str_cmp(word, "CyborgRuntime"))
+            {
+                if (cyborg_runtime_read_player(&ch->pcdata->cyber, fp) != CY_OK)
+                    bug("Invalid CyborgRuntime record was reset.", 0);
+                fMatch = TRUE;
+                break;
+            }
+            if (!str_cmp(word, "CyborgSystems"))
+            {
+                if (cyborg_systems_read_player(&ch->pcdata->cybernetics, fp) != CY_OK)
+                    bug("Invalid CyborgSystems record was reset.", 0);
+                fMatch = TRUE;
+                break;
+            }
+            if (!str_cmp(word, "CyborgCore"))
+            {
+                if (cyborg_core_read_player(&ch->pcdata->cyborg, fp) != CY_OK)
+                    bug("Invalid CyborgCore player record was reset.", 0);
+                fMatch = TRUE;
+                break;
+            }
 	    KEY( "Clan",	ch->clan,		fread_string( fp ) );
 	    KEY( "Cdest",	ch->pcdata->cdest,	fread_string( fp ) );
 	    KEY( "Contingency", ch->contingency,	fread_string( fp ) );
@@ -1405,6 +1471,7 @@ void fread_char( CHAR_DATA *ch, FILE *fp )
             ch->atoningwinds_timer = 0;
         }
         else ch->atoningwinds_timer = UMIN(ch->atoningwinds_timer, 20);
+        newclasses_loaded(ch);
         return;
     }
 	    KEY( "Exp",		ch->exp,		fread_number( fp ) );
@@ -1466,6 +1533,11 @@ void fread_char( CHAR_DATA *ch, FILE *fp )
 	    break;
 
 	case 'L':
+            if (!str_cmp(word,"LineageClass")) {
+                if (!lineage_state_read(&ch->pcdata->lineage,fp))
+                    bug("Invalid LineageClass record was reset.",0);
+                fMatch=TRUE; break;
+            }
     KEY( "Liquify_timer", ch->liquify_timer, fread_number( fp ) );
 	    KEY( "Lasthost",	ch->lasthost,		fread_string( fp ) );
 	    KEY( "Lasttime",	ch->lasttime,		fread_string( fp ) );
@@ -1518,6 +1590,16 @@ void fread_char( CHAR_DATA *ch, FILE *fp )
 	    break;
 
 	case 'P':
+            if (!str_cmp(word, "ParentLegacy")) {
+                if (!reference_legacy_read(&ch->pcdata->legacy, fp))
+                    bug("Invalid ParentLegacy record was reset.", 0);
+                fMatch = TRUE; break;
+            }
+            if (!str_cmp(word, "ParentGrant")) {
+                if (!newclasses_read_grant(ch, fp))
+                    bug("Invalid ParentGrant record was rejected.", 0);
+                fMatch = TRUE; break;
+            }
 	    KEY( "Paradox",	ch->paradox,		fread_number( fp ) );
 	    KEY( "Password",	ch->pcdata->pwd,	fread_string( fp ) );
 	    KEY( "Played",	ch->played,		fread_number( fp ) );
@@ -1606,6 +1688,21 @@ void fread_char( CHAR_DATA *ch, FILE *fp )
 
 	case 'S':
     KEY( "Slow_timer", ch->slow_timer, fread_number( fp ) );
+    if (!str_cmp(word,"SorcStarter") || !str_cmp(word,"SorcStyle")) {
+        char record[64],value[8],extra[8];
+        long flag;
+        bool starter=!str_cmp(word,"SorcStarter");
+        if (reference_line(fp,record,sizeof(record))
+            && sscanf(record,"%7s %7s",value,extra)==1
+            && (!strcmp(value,"0") || !strcmp(value,"1"))) flag=value[0]-'0';
+        else {
+            flag=starter ? 1 : 0;
+            bug("Invalid Sorcerer starter/style record.",0);
+        }
+        if (starter) ch->pcdata->sorcerer_starter=flag;
+        else ch->pcdata->sorcerer_chaos=flag;
+        fMatch=TRUE; break;
+    }
 	    KEY( "SavingThrow",	ch->saving_throw,	fread_number( fp ) );
 
 	    if ( !str_cmp( word, "Score" ) )
@@ -1982,6 +2079,11 @@ void fread_obj( CHAR_DATA *ch, FILE *fp )
 	    break;
 
 	case 'R':
+            if (!str_cmp(word, "RefWeapon")) {
+                if (!reference_weapon_read(&obj->reference_enchant, &obj->reference_ticks, fp))
+                    bug("Invalid RefWeapon record was reset.", 0);
+                fMatch = TRUE; break;
+            }
 	    KEY( "Resistance",	lago,			fread_number( fp ) );
 	    break;
 

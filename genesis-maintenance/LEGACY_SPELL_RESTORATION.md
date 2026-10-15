@@ -16,19 +16,22 @@ currently spawned. Seven NPC prototypes use `spec_cast_adept`, which can select
 Armor, Bless and Refresh. Forty use `spec_cast_undead`, which can select Weaken
 when its level condition permits.
 
-All skill-table indices, area spell slots and level-99 direct-casting
-restrictions remain unchanged. **Know Alignment, Frenzy and Darkblessing**
+All skill-table indices and area spell slots remain unchanged.
+Level-99 spells remain unavailable to direct player casting.
+**Know Alignment, Frenzy and Darkblessing**
 now have effects, but no original-area item payloads or class unlocks are
-added for them. **Ventriloquate** remains empty/disabled.
+added for them. **Ventriloquate** now provides bounded, explicitly attributed
+object-based illusory speech and is available to Sorcerers; use
+`cast ventriloquate <visible object here> <message>`.
 The earlier eight reconstructed class abilities and subsequent combat/stance
-repairs are retained. Hybrid-class changes and their internal design notes
-are excluded from the release.
+repairs are retained. Named hybrid registry/previews are now included;
+playable hybrid conversion and inheritance remain disabled.
 
 ## Reconstructed rules
 
 | Spell | Effect |
 | --- | --- |
-| Armor | Timed AC -20. |
+| Armor | Timed armor +20. Positive armor improves player avoidance in Genesis. |
 | Bless | Timed hitroll +2 and saving throw -2; both modifiers are removed together. |
 | Change Sex | Temporary change to a different valid sex value (0–2), reversed on removal. |
 | Create Water | Adds up to four times the clamped level in water units, within drink-container capacity. Refuses mixing with a nonempty non-water liquid and preserves poison. |
@@ -41,13 +44,13 @@ are excluded from the release.
 | Pass Door | Timed passage through ordinary closed doors, not pass-proof barriers. Existing movement, privacy and dimensional checks remain in place. |
 | Protection | Reduces damage from evil NPC attackers by 20%, rounded using integer arithmetic. No player-alignment assumptions. |
 | Refresh | Restores 5–25 mana, capped at maximum mana. Movement points no longer exist in this engine. |
-| Shield | Timed AC -20. |
-| Stone Skin | Timed AC -30. |
+| Shield | Timed armor +20. This item/NPC spell is distinct from the class `shield`/`mindblock` command. |
+| Stone Skin | Timed armor +30. |
 | Weaken | Timed derived Strength -1, or -2 at level 50+, with existing stat floors, saves, player magic resistance, same-room and combat-safety checks. No self-target or repeated stacking. |
 | Word of Recall | Recalls a player to their existing home only after travel checks; never creates or silently substitutes a destination. |
 | Know Alignment | Reports a visible same-room NPC's prototype alignment, clamped to -1000…1000: evil at -350 or below, good at 350 or above, otherwise neutral. Refuses player targets. |
 | Frenzy | A timed battle-rage effect granting hitroll +1 and damroll +1. Does not initiate attacks or alter Werewolf/Vampire rage state. |
-| Darkblessing | Only evil NPCs qualify: timed hitroll +1, damroll +1 and AC -10. Refuses all player targets and non-evil NPCs. |
+| Darkblessing | Only evil NPCs qualify: timed hitroll +1, damroll +1 and armor +10. Refuses all player targets and non-evil NPCs. NPC avoidance is level-based and ignores this armor stat; no NPC avoidance bonus is claimed. |
 
 For timed effects, duration is `clamp(2 + clamp(level, 1, 100) / 5, 2, 12)`
 game ticks. Recasting the same effect does not stack or refresh it. Distinct
@@ -98,8 +101,10 @@ python3 tests/legacy_spells.py
 The C probe covers all 20 handlers: bounded/nonstacking modifiers, removal,
 derived versus base stats, detection, NPC-only alignment, protection,
 independent Pass Door flag ownership, resource/container caps, poison
-dispatch, offensive saves/safety, invalid recall and the remaining dormant
-Ventriloquate handler. It checks Know Alignment output, boundary values,
+dispatch, offensive saves/safety, invalid recall and safe Ventriloquate
+rejection without an eligible object/message. The separate variants probe
+checks actual attributed object speech and control-character rejection.
+It checks Know Alignment output, boundary values,
 clamping and visibility, plus Frenzy/Darkblessing eligibility, duration caps,
 independent removal and dispelling.
 

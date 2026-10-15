@@ -37,7 +37,20 @@ int main(void)
 
     for (i = 0; i < MAX_SKILL && skill_table[i].name != NULL; i++)
         names++;
-    assert(names == 120);
+    assert(names == 182);
+    /* Existing indices stay stable as class effects are appended. */
+    assert(skill_lookup("gift recovery") == 119);
+    assert(skill_lookup("phoenix ember") == 120);
+    assert(skill_lookup("parent hindrance") == 133);
+    assert(skill_lookup("parent chill") == 138);
+    assert(skill_lookup("cyber mine") == 143);
+    assert(skill_lookup("parent companion") == 144);
+    assert(skill_lookup("parent legacy") == 145);
+    assert(skill_lookup("parent shadow") == 154);
+    assert(skill_lookup("crafted recovery") == 155);
+    assert(skill_lookup("crafted doom") == 166);
+    assert(skill_lookup("lineage recovery") == 167);
+    assert(skill_lookup("lineage refuge") == names - 1);
     assert(sn_lookup(MAX_SKILL) == 0);
     assert(sn_lookup(names) == 0); /* unused, unnamed table capacity */
     assert(slot_lookup(25) == skill_lookup("energy drain"));

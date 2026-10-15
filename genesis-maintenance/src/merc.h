@@ -24,6 +24,10 @@
 
 #include "mage.h"
 #include "memwatch.h"
+#include "cyborg_core.h"
+#include "reference_state.h"
+#include "crafted_state.h"
+#include "lineage_state.h"
 
 /*
  * Accommodate old non-Ansi compilers.
@@ -123,7 +127,7 @@ typedef void SPELL_FUN	args( ( long sn, long level, CHAR_DATA *ch, void *vo ) );
  * Adjust the pulse numbers to suit yourself.
  */
 #define AGE_PK			30 /* This age = can pk */
-#define MAX_SKILL		139
+#define MAX_SKILL		192
 #define MAX_SPELL		58
 #define MAX_LEVEL		7
 #define LEV_ST			(MAX_LEVEL)
@@ -390,6 +394,15 @@ struct	affect_data
 #define CLASS_NINJA             128
 #define CLASS_MONK              256
 #define CLASS_ELEM              512
+#define CLASS_PHOENIX           1024
+#define CLASS_CYBORG            2048
+#define CLASS_ANGEL             4096
+#define CLASS_DEMON             8192
+#define CLASS_GARGOYLE          16384
+#define CLASS_KUEIJIN           32768
+#define CLASS_DEATHKNIGHT       65536
+#define CLASS_MOOGLE            131072
+#define CLASS_WRAITH            262144
 
 
 /*
@@ -491,6 +504,7 @@ struct	affect_data
 #define ADV_MESSAGE_3		1024
 
 #define MIL (MAX_INPUT_LENGTH)
+#define ADV_CHAOS_BOOK 2048 /* ITEM_BOOK only: reroll page colour per chant. */
 #define MSL (MAX_STRING_LENGTH)
 
 /*
@@ -1608,6 +1622,18 @@ struct	pc_data
     long		auspice[5];
     long		tribes[20];
     long		powers[20];
+    /* Independent component state; never aliases a legacy class power slot. */
+    CYBORG_CORE cyborg;
+    CYBORG_RUNTIME cyber;
+    CYBORG_SYSTEMS cybernetics;
+    /* Transient ownership tags; never serialized as authority. */
+    long reference_familiar;
+    long reference_form;
+    REFERENCE_LEGACY legacy;
+    long sorcerer_starter; /* One starter kit per character, across class resets. */
+    long sorcerer_chaos;   /* Sorcerer playstyle; not a separate parent ID. */
+    CRAFTED_STATE crafted;
+    LINEAGE_STATE lineage;
     long		dragskills;
     long		highland[4];
     long		ninja[5];
@@ -1701,6 +1727,7 @@ struct	obj_index_data
  */
 struct	obj_data
 {
+    long reference_enchant, reference_ticks;
     OBJ_DATA *		next;
     OBJ_DATA *		next_content;
     OBJ_DATA *		contains;
@@ -1956,6 +1983,26 @@ extern long gsn_scream;
 extern long gsn_horridreality;
 extern long gsn_maskempathy;
 extern long gsn_gift_recovery;
+extern long gsn_phoenix_ember;
+extern long gsn_phoenix_flare;
+extern long gsn_phoenix_ward;
+extern long gsn_phoenix_wings;
+extern long gsn_phoenix_ascend;
+extern long gsn_phoenix_recovery;
+extern long gsn_cyber_traits;
+extern long gsn_parent_recovery;
+extern long gsn_parent_ward;
+extern long gsn_parent_aspect;
+extern long gsn_parent_wings;
+extern long gsn_crafted_wings, gsn_lineage_wings, gsn_lineage_pass, gsn_lineage_root, gsn_lineage_conceal;
+extern long gsn_parent_senses;
+extern long gsn_parent_cloak;
+extern long gsn_parent_hindrance;
+extern long gsn_parent_traits;
+extern long gsn_parent_feet;
+extern long gsn_parent_horns;
+extern long gsn_parent_tail;
+extern long gsn_parent_chill;
 
 /*
  * Utility macros.
@@ -2014,6 +2061,10 @@ extern long gsn_gift_recovery;
 #define IS_MAGE(ch)		((ch)->class == CLASS_MAGE && !IS_NPC(ch))
 #define IS_MONK(ch)             ((ch)->class == CLASS_MONK && !IS_NPC(ch))
 #define IS_ELEM(ch)             ((ch)->class == CLASS_ELEM && !IS_NPC(ch))
+#define IS_PHOENIX(ch)          ((ch)->class == CLASS_PHOENIX && !IS_NPC(ch))
+#define IS_CYBORG(ch)           ((ch)->class == CLASS_CYBORG && !IS_NPC(ch))
+#define IS_ANGEL(ch)            ((ch)->class == CLASS_ANGEL && !IS_NPC(ch))
+#define IS_DEMON(ch)            ((ch)->class == CLASS_DEMON && !IS_NPC(ch))
 
 #define IN_CLAN( ch )           (IS_NPC(ch)?0:ch->clan)
 #define IS_PLAYING( d )         (d->connected==CON_PLAYING)
@@ -3389,6 +3440,62 @@ long	get_container_flags	args( ( char *arg ) );		/* OLC */
 char *	get_flags_container	args( ( long arg ) );		/* OLC */
 long	get_liquid_type		args( ( char *arg ) );		/* OLC */
 char *	get_type_liquid		args( ( long arg ) );		/* OLC */
+
+/* Read-only parent/class expansion preview (not a conversion command). */
+void do_hybrid args( ( CHAR_DATA *ch, char *argument ) );
+void do_phoenix args( ( CHAR_DATA *ch, char *argument ) );
+void do_cyborg args( ( CHAR_DATA *ch, char *argument ) );
+void do_angel args( ( CHAR_DATA *ch, char *argument ) );
+void do_demon args( ( CHAR_DATA *ch, char *argument ) );
+void newclasses_clear args( ( CHAR_DATA *ch ) );
+void newclasses_loaded args( ( CHAR_DATA *ch ) );
+void newclasses_restore_passives args( ( CHAR_DATA *ch ) );
+long cyborg_system_rank args( ( CHAR_DATA *ch, int system ) );
+long cyborg_melee_damage args( ( CHAR_DATA *ch, long damage ) );
+long cyborg_absorb_damage args( ( CHAR_DATA *ch, long damage ) );
+int newclasses_darkvision args( ( CHAR_DATA *ch ) );
+int newclasses_room_dark args( ( ROOM_INDEX_DATA *room ) );
+void newclasses_object_release args( ( OBJ_DATA *object ) );
+void newclasses_release_transients args( ( CHAR_DATA *ch ) );
+int newclasses_read_grant args( ( CHAR_DATA *ch, FILE *fp ) );
+void newclasses_write_grants args( ( CHAR_DATA *ch, FILE *fp ) );
+long newclasses_speed_bonus args( ( CHAR_DATA *ch ) );
+long newclasses_cap_bonus args( ( CHAR_DATA *ch ) );
+long newclasses_weapon_bonus args( ( CHAR_DATA *ch, CHAR_DATA *victim, OBJ_DATA *weapon ) );
+void newclasses_item_tick args( ( OBJ_DATA *object ) );
+void newclasses_extra_attack args( ( CHAR_DATA *ch, CHAR_DATA *victim ) );
+int crafted_class_parent args( ( CHAR_DATA *ch ) );
+void crafted_clear args( ( CHAR_DATA *ch ) );
+void crafted_loaded args( ( CHAR_DATA *ch ) );
+void crafted_restore args( ( CHAR_DATA *ch ) );
+long crafted_weapon_bonus args( ( CHAR_DATA *ch, CHAR_DATA *victim, OBJ_DATA *weapon ) );
+DECLARE_DO_FUN( do_deathknight );
+DECLARE_DO_FUN( do_moogle );
+DECLARE_DO_FUN( do_gargoyle );
+DECLARE_DO_FUN( do_kueijin );
+DECLARE_DO_FUN( do_wraith );
+int lineage_class_parent args( ( CHAR_DATA *ch ) );
+int lineage_valid args( ( CHAR_DATA *ch ) );
+void lineage_clear args( ( CHAR_DATA *ch ) );
+void lineage_loaded args( ( CHAR_DATA *ch ) );
+void lineage_restore args( ( CHAR_DATA *ch ) );
+int lineage_perception args( ( CHAR_DATA *ch ) );
+int lineage_nightvision args( ( CHAR_DATA *ch ) );
+int lineage_shadow_sight args( ( CHAR_DATA *ch ) );
+int lineage_ground_awareness args( ( CHAR_DATA *ch, CHAR_DATA *victim ) );
+int lineage_concealed args( ( CHAR_DATA *ch ) );
+long lineage_absorb args( ( CHAR_DATA *ch, long dam, long dt ) );
+long lineage_weapon_bonus args( ( CHAR_DATA *ch, CHAR_DATA *victim, OBJ_DATA *weapon ) );
+const char *lineage_aspect args( ( CHAR_DATA *ch ) );
+int newclasses_lineage_reference args( ( CHAR_DATA *ch, int mode, char *arg, long mana ) );
+void cyborg_update args( ( CHAR_DATA *ch ) );
+int cyborg_has_component args( ( CHAR_DATA *ch, int component ) );
+int newclasses_nightvision args( ( CHAR_DATA *ch ) );
+void newclasses_describe args( ( CHAR_DATA *target, CHAR_DATA *viewer ) );
+bool sorcerer_starter_kit(CHAR_DATA *ch);
+int newclasses_perception args( ( CHAR_DATA *ch ) );
+long phoenix_rank args( ( CHAR_DATA *ch ) );
+void phoenix_clear args( ( CHAR_DATA *ch ) );
 
 #undef	CD
 #undef	MID

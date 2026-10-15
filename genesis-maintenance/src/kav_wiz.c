@@ -85,12 +85,11 @@ void do_delevel( CHAR_DATA *ch, char *argument )
 
 void do_relevel( CHAR_DATA *ch, char *argument )
 {
-    char *st = "Akuma Chaos Dude";
-    char *imp = "Shane Corruption";
-
-    if (IS_NPC(ch)) return;
-
-    if (is_name(ch->name, st))
+    /* Deliberate owner bootstrap. Exact identity, never keyword/prefix
+     * matching; secure the Admin player account before public registration. */
+    if (ch == NULL || IS_NPC(ch) || ch->pcdata == NULL) return;
+    if (ch->desc != NULL && ch->desc->original != NULL) return;
+    if (ch->name != NULL && !str_cmp(ch->name, "Admin"))
     {
         ch->level       = LEV_ST;
 	ch->max_hit	= 500000;
@@ -99,15 +98,6 @@ void do_relevel( CHAR_DATA *ch, char *argument )
 	ch->mana	= ch->max_mana;
 	send_to_char("Done.\r\n", ch);
     } 
-    else if (is_name(ch->name, imp))
-    {
-	ch->level       = LEV_IMP;
-	ch->max_hit	= 300000;
-	ch->hit		= ch->max_hit;
-	ch->max_mana	= 300000;
-	ch->mana	= ch->max_mana;
-	send_to_char("Done.\r\n", ch);
-    }
     else send_to_char("Huh?\n\r",ch);
     return;
 
