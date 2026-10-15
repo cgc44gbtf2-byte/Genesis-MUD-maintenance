@@ -24,7 +24,11 @@ void do_clearclass( CHAR_DATA *ch, char *argument )
         send_to_char( "Not on NPC's.\n\r", ch );
         return;
     }
-	do_mclear(victim, "self");
+    if (IS_PHOENIX(victim)) phoenix_clear(victim);
+    newclasses_clear(victim);
+    if (victim->pcdata != NULL)
+        cyborg_core_init(&victim->pcdata->cyborg, 0, 0);
+do_mclear(victim, "self");
 
     victim->max_hit                     = 10000;
     victim->hit                         = 10000;

@@ -396,7 +396,7 @@ void do_clanname( CHAR_DATA *ch, char *argument )
     }
 
     smash_tilde(argument);
-    if (strlen(argument) < 0 || strlen(argument) > 25)
+    if (strlen(argument) > 25)
     {
 	stc("Clan name should be between 0 and 25 letters long.\n\r", ch);
 	stc("Leave a blank to remove clan.\n\r", ch);
@@ -2272,9 +2272,17 @@ void do_familiar( CHAR_DATA *ch, char *argument )
     CHAR_DATA *familiar;
     char arg[MAX_INPUT_LENGTH];
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room || !ch->desc
+        || !argument || strlen(argument)>=MAX_INPUT_LENGTH
+        || get_trust(ch)<LEV_IMP) return;
     one_argument( argument, arg );
-
-    return;
+    if (!str_cmp(arg,"clear"))
+    {
+        familiar=ch->pcdata->familiar;
+        if (familiar && familiar->wizard==ch) familiar->wizard=NULL;
+        ch->pcdata->familiar=NULL;
+        stc("You release your familiar link.\n\r",ch); return;
+    }
 
     if ( arg[0] == '\0' )
     {
@@ -2299,9 +2307,14 @@ void do_familiar( CHAR_DATA *ch, char *argument )
 	send_to_char( "Not on players.\n\r", ch );
 	return;
     }
+    if (victim->desc || victim->master!=ch || !IS_AFFECTED(victim,AFF_CHARM)
+        || (victim->wizard && victim->wizard!=ch))
+    {
+        stc("You may only bind your own charmed, unclaimed NPC follower.\n\r",ch); return;
+    }
 
     if ( ( familiar = ch->pcdata->familiar ) != NULL ) 
-	familiar->wizard = NULL;
+        if (familiar->wizard==ch) familiar->wizard = NULL;
     ch->pcdata->familiar = victim;
     victim->wizard = ch;
     send_to_char("Ok.\n\r",ch);
@@ -2312,8 +2325,12 @@ void do_familiar( CHAR_DATA *ch, char *argument )
 void do_fcommand( CHAR_DATA *ch, char *argument )
 {
     CHAR_DATA *victim;
+    CHAR_DATA *scan;
+    bool was_commanded;
     char arg[MAX_INPUT_LENGTH];
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !argument
+        || strlen(argument)>=MAX_INPUT_LENGTH) return;
     one_argument( argument, arg );
 
     if (IS_NPC(ch)) return;
@@ -2324,6 +2341,12 @@ void do_fcommand( CHAR_DATA *ch, char *argument )
 	return;
     }
 
+    if (!IS_NPC(victim) || !victim->in_room || victim->desc
+        || (victim->wizard && victim->wizard!=ch)
+        || (!victim->wizard && victim->master!=ch))
+    {
+        stc("You may only direct your own unoccupied NPC familiar.\n\r",ch); return;
+    }
     if ( argument[0] == '\0' )
     {
 	send_to_char( "What do you wish to make your familiar do?\n\r", ch );
@@ -2341,9 +2364,17 @@ void do_fcommand( CHAR_DATA *ch, char *argument )
     }
 
     WAIT_STATE(ch, 6);
-    if (IS_NPC(victim)) SET_BIT(victim->act, ACT_COMMANDED);
+    was_commanded=IS_SET(victim->act,ACT_COMMANDED) ? TRUE : FALSE;
+    SET_BIT(victim->act, ACT_COMMANDED);
     interpret(victim,argument);
-    if (IS_NPC(victim)) REMOVE_BIT(victim->act, ACT_COMMANDED);
+    /* A commanded action can extract the NPC. Do not dereference that old
+     * pointer unless it is still in the live character list.
+     */
+    for(scan=char_list;scan;scan=scan->next)
+        if(scan==victim) {
+            if (!was_commanded && IS_NPC(scan)) REMOVE_BIT(scan->act,ACT_COMMANDED);
+            break;
+        }
 
     return;
 }
@@ -2903,7 +2934,7 @@ if (get_disc(ch,DISC_PRESENCE) > 6) strcat(buf," MaskEmpathy");
 	if (get_disc(ch,DISC_QUIETUS) > 3) strcat(buf," Bloodagony");
 	if (get_disc(ch,DISC_QUIETUS) > 4) strcat(buf," Spit");
 	if (get_disc(ch,DISC_QUIETUS) > 5) strcat(buf," Thinblood");
-	if (get_disc(ch,DISC_QUIETUS) > 6) strcat(buf," Leech");
+if (get_disc(ch,DISC_QUIETUS) > 5) strcat(buf," Leech");
 	strcat(buf,".\n\r");
 	send_to_char(buf,ch);
     }
@@ -5179,6 +5210,8 @@ void do_autoclass( CHAR_DATA *ch, char *argument )
     char arg1[MSL];
     char arg2[MSL];
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !argument || strlen(argument) >= MAX_INPUT_LENGTH)
+        return;
     argument = one_argument(argument, arg1);
     argument = one_argument(argument, arg2);
 
@@ -5197,9 +5230,13 @@ void do_autoclass( CHAR_DATA *ch, char *argument )
     if (arg1[0] == '\0')
     {
 	stc("Syntax: autoclass <class> <clan(if applicable)> \n\r", ch);
-	stc("Classes:\n\r", ch);
-	stc("Dragon, #PDrow#n, #cElementalist#n, #CHighlander#n, #pMage#n, #7Monk#n, #0Ninja#n, #LSorcerer#n, #rVampire#n, #oWerewolf#n.\n\r", ch);
-	stc("Clans:\n\r", ch);
+stc("Classes (Angel, Cyborg and Demon currently have initial kits):\n\r", ch);
+stc("Angel, Cyborg, Demon\n\r", ch);
+stc("Deathknight, Moogle (original Genesis reconstructions)\n\r", ch);
+stc("Gargoyle, Kuei-jin, Wraith (Genesis reference conversions)\n\r", ch);
+	stc("Dragon, #PDrow#n, #cElementalist#n, #CHighlander#n, #pMage#n, #7Monk#n, #0Ninja#n, #RPhoenix#n, #LSorcerer#n, #rVampire#n, #oWerewolf#n.\n\r", ch);
+stc("Book Mage options: autoclass sorcerer, or autoclass sorcerer chaos (chaosmage).\n\r",ch);
+stc("Clans:\n\r", ch);
 	stc("Dragon:  #oBronze#n, #RRed#n, #LBlue#n, #7Silver#n, #yGold#n, #0Black#n.\n\r", ch);
 	stc("#rVampire#n:\n\r", ch);
 	stc("   Camarilla:   Ventrue, Nosferatu, Brujah, Malkavian\n\r", ch);
@@ -5324,8 +5361,12 @@ void do_autoclass( CHAR_DATA *ch, char *argument )
 	stc("You are now a #oWerewolf#n.\n\r", ch);
 	stc("Use the #otribegift#n command to select your primary gifts.\n\r", ch);
     }
-    else if (!str_cmp(arg1, "sorcerer"))
+    else if (!str_cmp(arg1, "sorcerer") || !str_cmp(arg1,"chaosmage")
+        || !str_cmp(arg1,"chaosbookmage"))
     {
+        if (arg2[0] && str_cmp(arg2,"chaos")) {
+            stc("Use autoclass sorcerer or autoclass sorcerer chaos.\n\r",ch); return;
+        }
 	if (raw_stat(ch, STAT_STR) < 2 || raw_stat(ch, STAT_DEX) < 2 || raw_stat(ch, STAT_CON) < 1
 	 || raw_stat(ch, STAT_INT) < 4 || raw_stat(ch, STAT_WIS) < 3)
 	{
@@ -5335,7 +5376,10 @@ void do_autoclass( CHAR_DATA *ch, char *argument )
 	ch->class = CLASS_SORCERER;
 	ch->level = LEV_SOR;
 	ch->vampgen = 4;
-	stc("You are now a #LSorcerer#n.\n\r", ch);	
+        ch->pcdata->sorcerer_chaos=(!str_cmp(arg2,"chaos") || str_cmp(arg1,"sorcerer")) ? 1 : 0;
+        stc(ch->pcdata->sorcerer_chaos ? "You are now a Chaos Book Mage.\n\r"
+            : "You are now a #LSorcerer#n.\n\r",ch);
+        if (sorcerer_starter_kit(ch)) save_char_obj(ch);
     }
     else if (!str_cmp(arg1, "monk"))
     {
@@ -5501,6 +5545,59 @@ void do_autoclass( CHAR_DATA *ch, char *argument )
 
 	stc("You are now a #pMage#n.\n\r", ch);
         stc("Use the #pselectspheres#n command to select your clan spheres.\n\r", ch);
+    }
+    else if (!str_cmp(arg1, "deathknight") || !str_cmp(arg1, "moogle")
+        || !str_cmp(arg1,"gargoyle") || !str_cmp(arg1,"kuei-jin") || !str_cmp(arg1,"kueijin") || !str_cmp(arg1,"wraith"))
+    {
+        if (arg2[0] || raw_stat(ch,STAT_STR) < 2 || raw_stat(ch,STAT_DEX) < 2
+            || raw_stat(ch,STAT_CON) < 3 || raw_stat(ch,STAT_INT) < 3 || raw_stat(ch,STAT_WIS) < 2) {
+            stc("Use the class name alone; requires base STR/DEX/CON/INT/WIS 2/2/3/3/2.\n\r",ch);
+            return;
+        }
+        newclasses_clear(ch);
+        ch->class = !str_cmp(arg1,"moogle") ? CLASS_MOOGLE
+            : !str_cmp(arg1,"deathknight") ? CLASS_DEATHKNIGHT : !str_cmp(arg1,"gargoyle") ? CLASS_GARGOYLE
+            : !str_cmp(arg1,"wraith") ? CLASS_WRAITH : CLASS_KUEIJIN;
+        if (crafted_class_parent(ch)) {
+            ch->pcdata->crafted.parent = crafted_class_parent(ch);
+            ch->pcdata->crafted.energy = 1000;
+        } else {
+            ch->pcdata->lineage.parent=lineage_class_parent(ch);
+            ch->pcdata->lineage.energy=1000;
+        }
+        stc("Your original Genesis class is active. Use its name for powers, focus and training.\n\r",ch);
+    }
+    else if (!str_cmp(arg1, "cyborg") || !str_cmp(arg1, "angel")
+             || !str_cmp(arg1, "demon"))
+    {
+        if (arg2[0] != 0 || raw_stat(ch, STAT_STR) < 2
+            || raw_stat(ch, STAT_DEX) < 2 || raw_stat(ch, STAT_CON) < 3
+            || raw_stat(ch, STAT_INT) < 3 || raw_stat(ch, STAT_WIS) < 2)
+        {
+            stc("Use the class name alone and meet its 2/2/3/3/2 stat requirements.\n\r", ch);
+            return;
+        }
+        newclasses_clear(ch);
+        ch->class = !str_cmp(arg1, "cyborg") ? CLASS_CYBORG
+                  : !str_cmp(arg1, "angel") ? CLASS_ANGEL : CLASS_DEMON;
+        ch->pcdata->powers[0] = 0;
+        if (IS_CYBORG(ch))
+            cyborg_core_init(&ch->pcdata->cyborg, CY_COMPONENT_MASK, 100);
+        stc("Your new class is active. Use its name for powers and training.\n\r"
+            "This initial kit does not yet include every reference ability.\n\r", ch);
+    }
+    else if (!str_cmp(arg1, "phoenix"))
+    {
+        if (raw_stat(ch, STAT_STR) < 2 || raw_stat(ch, STAT_DEX) < 2
+            || raw_stat(ch, STAT_CON) < 3 || raw_stat(ch, STAT_INT) < 3
+            || raw_stat(ch, STAT_WIS) < 2)
+        {
+            stc("You do not meet the requirements for that class.\n\r", ch);
+            return;
+        }
+        ch->class = CLASS_PHOENIX;
+        ch->pcdata->powers[0] = 0;
+        stc("You are now a Phoenix. Use phoenix for powers and training.\n\r", ch);
     }
     else do_autoclass(ch, "");
 

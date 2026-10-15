@@ -264,6 +264,7 @@
    { "call",		do_call,	POS_FIGHTING,	 LEV_SLE,  LOG_NORMAL	},
    { "claim",		do_claim,	POS_STANDING,	 LEV_SLE,  LOG_NORMAL	},
    { "autoclass",	do_autoclass,	POS_FIGHTING,	LEV_AWA,  LOG_ALWAYS	},
+   { "hybrid", do_hybrid, POS_DEAD, LEV_AWA, LOG_NORMAL },
    { "complete",	do_complete,	POS_RESTING,	LEV_SLE,  LOG_NORMAL	},
    { "demote",		do_demote,	POS_STANDING,	 LEV_SLE,  LOG_NORMAL 	},
    { "defences",	do_vampire,	POS_STANDING,	 LEV_AWA,  LOG_NORMAL	},
@@ -318,6 +319,7 @@
      * Mage Stuffs.
      */
    { "arete",		 do_arete,	  POS_FIGHTING,    LEV_AWA, LOG_NORMAL   },
+   { "magepowers", do_magepowers, POS_SLEEPING, LEV_AWA, LOG_NORMAL },
    { "beginnersluck",	 do_beginners_luck,   POS_STANDING, LEV_AWA, LOG_NORMAL  },
    { "breakdreamshell",  do_break_dreamshell, POS_STANDING, LEV_AWA, LOG_NORMAL  },
    { "brittlebones", 	 do_brittle_bones,   POS_FIGHTING, LEV_AWA, LOG_NORMAL  },
@@ -595,6 +597,16 @@
    { "flarearrow",      do_flarearrow,	POS_FIGHTING,	LEV_AWA,  LOG_NORMAL	},
    { "elemskill",	do_element,	POS_DEAD,	LEV_AWA,  LOG_NORMAL	},
    { "fireblade",	do_fireblade,	POS_FIGHTING,	LEV_AWA,  LOG_NORMAL	},
+   { "phoenix", do_phoenix, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
+   { "cyborg", do_cyborg, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
+   { "angel", do_angel, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
+   { "demon", do_demon, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
+   { "deathknight", do_deathknight, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
+   { "moogle", do_moogle, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
+   { "gargoyle", do_gargoyle, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
+   { "kueijin", do_kueijin, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
+   { "kuei-jin", do_kueijin, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
+   { "wraith", do_wraith, POS_FIGHTING, LEV_AWA, LOG_NORMAL },
    { "phoenixform",     do_phoenixform,	POS_STANDING,	LEV_AWA,  LOG_NORMAL	},
    { "iciclestorm",     do_iciclestorm,	POS_FIGHTING,	LEV_AWA,  LOG_NORMAL	},
    { "aquabarrier",     do_aquabarrier,	POS_STANDING,	LEV_AWA,  LOG_NORMAL	},
@@ -2742,7 +2754,13 @@ long command_lookup(char *command, long trust)
       if (cmd_table[cmd].name[0] != '\0')
       {
          {
-            if (IS_MORE(ch,MORE_HEAD) || IS_EXTRA(ch,EXTRA_OSWITCH) )
+            if ((IS_MORE(ch,MORE_HEAD) || IS_EXTRA(ch,EXTRA_OSWITCH))
+                && str_cmp(cmd_table[cmd].name, "angel")
+                && str_cmp(cmd_table[cmd].name, "gargoyle")
+                && str_cmp(cmd_table[cmd].name, "kueijin")
+                && str_cmp(cmd_table[cmd].name, "kuei-jin")
+                && str_cmp(cmd_table[cmd].name, "wraith")
+                && str_cmp(cmd_table[cmd].name, "demon"))
             {
                if (IS_MORE(ch, MORE_MUMMIFIED))
                {

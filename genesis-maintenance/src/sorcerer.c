@@ -17,6 +17,8 @@ void	adv_spell_affect	args( ( CHAR_DATA *ch, OBJ_DATA *book, OBJ_DATA *page, cha
 void	adv_spell_action	args( ( CHAR_DATA *ch, OBJ_DATA *book, OBJ_DATA *page, char *argument, int lastcolor ) );
 
 
+#include "sorcerer_starter.inc"
+
 OBJ_DATA *get_page( OBJ_DATA *book, long page_num )
 {
     OBJ_DATA *page;
@@ -128,6 +130,7 @@ void do_sorccreate( CHAR_DATA *ch, char *argument )
     char buf[MIL];
     long itemtype;
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !argument) return;
     one_argument(argument, arg);
 
     if (!IS_SORCERER(ch))
@@ -136,9 +139,13 @@ void do_sorccreate( CHAR_DATA *ch, char *argument )
 	return;
     }
 
+    if (!str_cmp(arg,"starter")) {
+        if (sorcerer_starter_kit(ch)) save_char_obj(ch);
+        return;
+    }
     if (arg[0] == '\0')
     {
-	stc("Item can be one of: Book, Page or Pen.\n\r", ch);
+	stc("Item can be one of: Book, Page, Pen or Starter (one-time kit).\n\r", ch);
 	return;
     }
     else if (!str_cmp(arg, "book")) itemtype = ITEM_BOOK;
@@ -150,6 +157,9 @@ void do_sorccreate( CHAR_DATA *ch, char *argument )
 	return;
     }
 
+    if (!get_obj_index(OBJ_VNUM_PROTOPLASM)) {
+        stc("The crafting template is unavailable. Tell an administrator.\n\r",ch); return;
+    }
     if (itemtype == ITEM_PEN || itemtype == ITEM_BOOK)
     {
 	if (ch->primal < 10)
@@ -162,6 +172,8 @@ void do_sorccreate( CHAR_DATA *ch, char *argument )
 
     obj = create_object(get_obj_index(OBJ_VNUM_PROTOPLASM), 0);
     obj->item_type = itemtype;
+    if (itemtype==ITEM_BOOK && ch->pcdata->sorcerer_chaos==1)
+        SET_BIT(obj->spectype,ADV_CHAOS_BOOK);
     if (itemtype == ITEM_PEN || itemtype == ITEM_BOOK) obj->wear_flags = ITEM_TAKE + ITEM_WEAR_HOLD;
 
     sprintf(buf, "%s", arg);
@@ -558,6 +570,11 @@ void do_chant( CHAR_DATA *ch, char *argument )
 	stc("The current page seems to have been torn out!\n\r", ch);
 	return;
     }
+    if (page->spectype==0 && page->chpoweruse && page->chpoweruse[0]
+        && str_cmp(page->chpoweruse,"(null)")) {
+        stc("This is a reading page, not a spell. Read it, then turn to a spell page before chanting.\n\r",ch);
+        return;
+    }
 
     act("You chant the arcane words from $p.", ch, book, NULL, TO_CHAR);
     act("$n chants some arcane words from $p.", ch, book, NULL, TO_ROOM);
@@ -577,7 +594,7 @@ void adv_spell_damage( CHAR_DATA *ch, OBJ_DATA *book, OBJ_DATA *page, char *argu
     OBJ_DATA *page_next;
     char arg[MIL];
     char buf[MSL];
-    int cost, dam, color = page->toughness;
+    int cost, dam, color = sorcerer_page_color(ch,book,page);
     bool area = FALSE, heal = FALSE, spec = FALSE;
     extern long chainspell;
 
@@ -652,6 +669,12 @@ void adv_spell_damage( CHAR_DATA *ch, OBJ_DATA *book, OBJ_DATA *page, char *argu
 	dam -= 20 * get_color(ch, BLACK_MAGIC);
     }
 
+    if (IS_SET(book->spectype,ADV_CHAOS_BOOK)) {
+        /* A colour roll must not turn healing into an attack on its recipient. */
+        area=page->toughness==PURPLE_MAGIC;
+        heal=page->toughness==BLUE_MAGIC || page->toughness==GREEN_MAGIC;
+        spec=page->toughness==GREEN_MAGIC;
+    }
     if ((strlen(page->victpoweron) < 1 || !str_cmp(page->victpoweron, "(null)"))
      || (strlen(page->victpoweroff) < 1 || !str_cmp(page->victpoweroff, "(null)"))
      || (strlen(page->chpoweroff) < 1 || !str_cmp(page->chpoweroff, "(null)")))
@@ -789,7 +812,7 @@ void adv_spell_affect( CHAR_DATA *ch, OBJ_DATA *book, OBJ_DATA *page, char *argu
     CHAR_DATA *victim = ch;
     OBJ_DATA *page_next;
     char arg[MSL];
-    long bonuses, sn, color = page->toughness, duration = page->level, cost = 1500 + 30*duration;
+    long bonuses, sn, color = sorcerer_page_color(ch,book,page), duration = page->level, cost = 1500 + 30*duration;
     long affect_bit = page->value[3], apply_bit = page->value[1];
     bool any_affects = FALSE;
     extern long chainspell;
@@ -979,7 +1002,8 @@ void adv_spell_action( CHAR_DATA *ch, OBJ_DATA *book, OBJ_DATA *page, char *argu
     OBJ_DATA *page_next;
     char arg[MSL];
     char buf[MSL];
-    long color = page->toughness, cost = 3000;
+    long colour = sorcerer_page_color(ch,book,page);
+    long color = IS_SET(book->spectype,ADV_CHAOS_BOOK) ? page->toughness : colour, cost = 3000;
     extern long chainspell;
 
     if (++chainspell > 10) return;

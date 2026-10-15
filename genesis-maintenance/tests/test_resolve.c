@@ -8,6 +8,13 @@
 
 static int roll;
 long gsn_lycaon = 1;
+/* This lightweight probe does not link db.c's skill globals. */
+long gsn_phoenix_wings = 2;
+/* Focused resolver harness doesn't link db.c. New real flight ownership is
+ * exercised separately by the full linked new-class probe.
+ */
+long gsn_parent_wings = 149;
+long gsn_crafted_wings=161, gsn_lineage_wings=173;
 char *str_dup(const char *text)
 {
     char *result = malloc(strlen(text) + 1);

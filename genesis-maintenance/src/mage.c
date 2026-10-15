@@ -65,7 +65,7 @@ static bool mage_quintessence(CHAR_DATA *ch, char *text, long minimum, long *qui
     errno = 0;
     value = strtol(text, &end, 10);
     if (text == end || *end != '\0' || errno == ERANGE || value < minimum
-        || value > (LONG_MAX - 1000000L) / (MANA_QUINT * 3L))
+        || value > (LONG_MAX - 1000000L) / 1000000L)
     {
         stc("Quintessence must be a valid nonnegative integer within range.\n\r", ch);
         return FALSE;
@@ -77,6 +77,26 @@ static bool mage_quintessence(CHAR_DATA *ch, char *text, long minimum, long *qui
 /* Check all costs before spending anything. Heart's Blood supplies at most
  * five missing points, never a negative BODY balance or a mid-command death.
  */
+/* Validate optional numeric arguments before spellpower can add paradox,
+ * Heart's Blood can hurt the caster, or legacy target/cost code can run. */
+static bool mage_numeric_input(CHAR_DATA *ch,char *argument,int position)
+{
+    char value[MAX_INPUT_LENGTH];
+    long quint;
+    int i;
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room
+        || ch->hit<=0 || ch->position<POS_RESTING || IS_BUI(ch) || !argument
+        || strlen(argument)>=MAX_INPUT_LENGTH) return FALSE;
+    value[0]=0;
+    for(i=0;i<position;++i) argument=one_argument(argument,value);
+    if (*argument)
+    {
+        stc("Too many spell arguments.\n\r",ch);
+        return FALSE;
+    }
+    return mage_quintessence(ch,value,0,&quint);
+}
+
 static bool mage_pay_cost(CHAR_DATA *ch, long quint, long base, long per_quint)
 {
     long available = UMAX(0, ch->quint[BODY]);
@@ -110,6 +130,139 @@ static bool mage_pay_cost(CHAR_DATA *ch, long quint, long base, long per_quint)
     }
     ch->quint[BODY] = available - UMIN(available, quint);
     ch->mana -= cost;
+    return TRUE;
+}
+
+/* A safety probe must never leave the caster in the target's room.
+ * Support casts require self/group consent, not combat PK eligibility.
+ * Hostile casts retain native protection and explicit PK/group checks.
+ */
+static bool mage_target_ready(CHAR_DATA *ch, CHAR_DATA *victim, bool support)
+{
+    ROOM_INDEX_DATA *origin, *destination;
+    bool blocked;
+    if (!ch || !victim || !ch->in_room || !victim->in_room
+        || IS_BUI(ch) || IS_BUI(victim)) return FALSE;
+    origin=ch->in_room; destination=victim->in_room;
+    if (origin!=destination && IS_SET(origin->room_flags|destination->room_flags,
+        ROOM_PRIVATE|ROOM_SOLITARY|ROOM_NO_TELEPORT))
+    {
+        stc("Remote magic cannot cross that room's protections.\n\r",ch);
+        return FALSE;
+    }
+    if (support)
+    {
+        if ((victim!=ch && !is_same_group(ch,victim))
+            || ((ch->affected_by^victim->affected_by)
+                & (AFF_ETHEREAL|AFF_SHADOWPLANE|AFF_DEEPUMBRA)))
+        {
+            stc("Support magic requires yourself or a group member on your plane.\n\r",ch);
+            return FALSE;
+        }
+        return TRUE;
+    }
+    if (victim==ch || is_same_group(ch,victim)
+        || IS_SET(origin->room_flags|destination->room_flags,ROOM_SAFE)
+        || (!IS_NPC(victim) && (!CAN_PK(ch) || !CAN_PK(victim))))
+    {
+        stc("That target is protected from hostile magic.\n\r",ch);
+        return FALSE;
+    }
+    if (origin!=destination) { char_from_room(ch); char_to_room(ch,destination); }
+    blocked=is_safe(ch,victim);
+    if (ch->in_room!=origin) { char_from_room(ch); char_to_room(ch,origin); }
+    return !blocked;
+}
+
+static CHAR_DATA *mage_attack_target(CHAR_DATA *ch, char *name)
+{
+    return name[0] ? get_char_world(ch,name) : ch->fighting;
+}
+
+static bool mage_roll(CHAR_DATA *ch, long sphere, long *power)
+{
+    ROOM_INDEX_DATA *origin=ch->in_room;
+    *power=spellpower(ch,sphere);
+    /* Backlash can incapacitate or relocate the caster. Do not continue a
+     * paid cast from a corpse, replacement body or resurrection room.
+     */
+    return ch->in_room==origin && ch->hit>0 && ch->position>=POS_RESTING
+        && !IS_BUI(ch);
+}
+
+typedef struct mage_time_spell {
+    const char *name;
+    void (*cast)(CHAR_DATA *,char *);
+    int sphere,level,modes;
+    long mana;
+} MAGE_TIME_SPELL;
+/* modes:1 Contingency,2 Doublecast. Preserve the original Doublecast list;
+ * restore the two explicitly disabled Contingency damage selections.
+ */
+static const MAGE_TIME_SPELL mage_time_spells[]={
+    {"brittlebones",do_brittle_bones,MENT,3,1,MANA_BRITTLE_BONES},
+    {"mutateephemera",do_mutate_ephemera,MENT,5,3,MANA_MUTATE_EPHEMERA},
+    {"electricalchaos",do_electrical_chaos,MFOR,2,3,MANA_ELECTRICAL_CHAOS},
+    {"frictioncurse",do_friction_curse,MFOR,3,1,MANA_FRICTION_CURSE},
+    {"inferno",do_inferno,MFOR,5,3,MANA_INFERNO},
+    {"polymorphother",do_polymorph_other,MLIF,5,1,MANA_POLYMORPH_OTHER},
+    {"alterweight",do_alterweight,MMAT,5,3,MANA_ALTER_WEIGHT},
+    {"mageheal",do_mage_heal,MLIF,2,2,MANA_MAGE_HEAL}
+};
+
+static const MAGE_TIME_SPELL *mage_time_find(const char *name,int mode)
+{
+    size_t i;
+    if (!name) return NULL;
+    for(i=0;i<sizeof(mage_time_spells)/sizeof(mage_time_spells[0]);++i)
+        if ((mage_time_spells[i].modes&mode) && !str_cmp(name,mage_time_spells[i].name))
+            return &mage_time_spells[i];
+    return NULL;
+}
+
+static bool mage_time_ready(CHAR_DATA *ch,const MAGE_TIME_SPELL *spell,
+    char *argument,long *cost)
+{
+    CHAR_DATA *v;
+    char name[MAX_INPUT_LENGTH],number[MAX_INPUT_LENGTH];
+    char *rest;
+    long quint,cor;
+    if (!spell || ch->spheres[spell->sphere]<spell->level) return FALSE;
+    if (spell->cast==do_inferno)
+    {
+        if (!mage_numeric_input(ch,argument,1)
+            ) return FALSE;
+        one_argument(argument,number);
+        if (!mage_quintessence(ch,number,0,&quint)) return FALSE;
+        if (quint>UMAX(0,ch->quint[BODY]) && (!IS_XTRA(ch,XTRA_HEARTS_BLOOD)
+            || quint-UMAX(0,ch->quint[BODY])>5)) return FALSE;
+        for(v=ch->in_room->people;v;v=v->next_in_room)
+            if (v!=ch && !is_same_group(ch,v) && mage_target_ready(ch,v,FALSE)) break;
+        if (!v) return FALSE;
+        *cost=spell->mana+quint*MANA_QUINT;
+        return TRUE;
+    }
+    if (!mage_numeric_input(ch,argument,2)) return FALSE;
+    rest=one_argument(argument,name); one_argument(rest,number);
+    if (!mage_quintessence(ch,number,0,&quint)) return FALSE;
+    v=(spell->cast==do_mage_heal && !name[0]) ? ch : mage_attack_target(ch,name);
+    if (!v || !v->in_room) return FALSE;
+    cor=correspondence_level(ch,v);
+    if (cor>ch->spheres[MCOR] || !mage_target_ready(ch,v,spell->cast==do_mage_heal))
+        return FALSE;
+    if (spell->cast==do_mage_heal && v->hit>=v->max_hit) return FALSE;
+    if (spell->cast==do_polymorph_other
+        && (IS_NPC(v) || is_affected(v,gsn_lycaon) || IS_POLYAFF(v,POLY_PIG))) return FALSE;
+    if (spell->cast==do_mutate_ephemera && IS_XTRA(v,XTRA_MUTATE_EPHEMERA)) return FALSE;
+    if (spell->cast==do_brittle_bones && is_affected(v,skill_lookup("brittle bones"))) return FALSE;
+    if (spell->cast==do_friction_curse && is_affected(v,skill_lookup("friction curse"))) return FALSE;
+    if ((spell->cast==do_alterweight
+            && ((!IS_NPC(v) && cor==5) || (IS_NPC(v) && v->level>800)))
+        || (spell->cast==do_electrical_chaos && cor==5
+            && (!IS_NPC(v) || v->level>800))) return FALSE;
+    if (quint>UMAX(0,ch->quint[BODY])
+        && (!IS_XTRA(ch,XTRA_HEARTS_BLOOD) || quint-UMAX(0,ch->quint[BODY])>5)) return FALSE;
+    *cost=spell->mana+cor*cor*100+quint*MANA_QUINT;
     return TRUE;
 }
 
@@ -158,10 +311,12 @@ void do_rift( CHAR_DATA *ch, char *argument )
     long power, quintessence;
     OBJ_DATA *in_gate;
     OBJ_DATA *to_gate;
+    OBJ_INDEX_DATA *portal;
     ROOM_INDEX_DATA *pIn;
     ROOM_INDEX_DATA *pTo;
 
 
+    if (!mage_numeric_input(ch,argument,2)) return;
     argument = one_argument( argument, arg1 );
     argument = one_argument( argument, arg2 );
 
@@ -189,9 +344,10 @@ void do_rift( CHAR_DATA *ch, char *argument )
         return;
     }
 
-    if ((IS_NPC(victim) && victim->level > 600) 
-      || (IS_NPC(victim) && (victim->pIndexData->vnum == MOB_VNUM_EYE || victim->pIndexData->vnum == MOB_VNUM_FROG ||
-	victim->pIndexData->vnum == MOB_VNUM_RAVEN || victim->pIndexData->vnum == MOB_VNUM_CAT || victim->pIndexData->vnum == MOB_VNUM_DOG)) ) 
+    if (IS_NPC(victim) && (!victim->pIndexData || victim->level > 600
+        || victim->pIndexData->vnum == MOB_VNUM_EYE || victim->pIndexData->vnum == MOB_VNUM_FROG
+        || victim->pIndexData->vnum == MOB_VNUM_RAVEN || victim->pIndexData->vnum == MOB_VNUM_CAT
+        || victim->pIndexData->vnum == MOB_VNUM_DOG))
     {
         act("You attempt to open an astral gate to $N, but fail.",ch,NULL,victim,TO_CHAR);
         act("$n attempts to open an astral gate, but fails.",ch,NULL,victim,TO_ROOM);
@@ -211,11 +367,27 @@ void do_rift( CHAR_DATA *ch, char *argument )
   	  send_to_char("You can't open a rift to that!", ch);
         return;
     }
-
-    if (!mage_quintessence(ch, arg2, 0, &quintessence)
-        || !mage_pay_cost(ch, quintessence, MANA_RIFT, 0))
+    if (!victim->in_room || victim->hit<=0 || IS_BUI(victim)
+        || ch->in_room==victim->in_room || ch->fighting || victim->fighting
+        || ch->fight_timer>0 || victim->fight_timer>0
+        || ch->embraced!=ARE_NONE || IS_EXTRA(ch,TIED_UP)
+        || IS_AFFECTED(ch,AFF_CURSE|AFF_WEBBED|AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL)
+        || IS_AFFECTED(victim,AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL)
+        || is_affected(ch,gsn_lineage_root)
+        || IS_SET(ch->in_room->room_flags|victim->in_room->room_flags,
+            ROOM_SAFE|ROOM_PRIVATE|ROOM_SOLITARY|ROOM_NO_RECALL|ROOM_NO_TELEPORT))
+    {
+        stc("Combat, restraint or room/plane protections block that Rift.\n\r",ch);
         return;
-    power = spellpower(ch, 4);
+    }
+
+    if (!mage_quintessence(ch,arg2,0,&quintessence)) return;
+    portal=NULL;
+    if (quintessence>0 && !(portal=get_obj_index(OBJ_VNUM_PORTAL)))
+    {
+        stc("The Rift portal template is unavailable.\n\r",ch); return;
+    }
+    if (!mage_pay_cost(ch,quintessence,MANA_RIFT,0) || !mage_roll(ch,4,&power)) return;
     if (power <= 0)
     {
         stc("You failed to cast Rift.\n\r", ch);
@@ -242,7 +414,7 @@ void do_rift( CHAR_DATA *ch, char *argument )
 	pIn = ch->in_room;
 	pTo = victim->in_room;
 
-	in_gate = create_object( get_obj_index( OBJ_VNUM_PORTAL ), 0 );
+    in_gate = create_object( portal, 0 );
 	obj_to_room( in_gate, pIn );
 	in_gate->value[0] = victim->in_room->vnum;
 	in_gate->value[1] = 1;
@@ -250,7 +422,7 @@ void do_rift( CHAR_DATA *ch, char *argument )
 	in_gate->timer = power;
 	in_gate->item_type = ITEM_WGATE;
 
-	to_gate = create_object( get_obj_index( OBJ_VNUM_PORTAL ), 0 );
+    to_gate = create_object( portal, 0 );
 	obj_to_room( to_gate, pTo );
 	to_gate->value[0] = ch->in_room->vnum;
 	to_gate->value[1] = 2;
@@ -321,7 +493,10 @@ void do_brittle_bones(CHAR_DATA * ch, char * argument)
     long power, quint, sn, correspondence;
     ROOM_INDEX_DATA *location;
     ROOM_INDEX_DATA *to_room;
+    bool protected;
 
+    if (!ch || !ch->in_room) return;
+    if (!mage_numeric_input(ch,argument,2)) return;
     quint = 0;
     argument = one_argument(argument, arg1);
     argument = one_argument(argument, arg2);
@@ -339,41 +514,17 @@ void do_brittle_bones(CHAR_DATA * ch, char * argument)
     }
 
 
-    power = spellpower(ch, 3);
-
-    if (arg2[0] != '\0')
-    {
-        quint = atoi( arg2 );
-
-        if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-        {
-            send_to_char("You do not have that much quintessence.\n\r", ch);
-            return;
-         }
-
-     else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-
-        power += quint;
-        ch->quint[1] -= quint;
-    }
+    if (!mage_quintessence(ch,arg2,0,&quint)) return;
 
    // if (victim != ch) power -= 1; //costs 1 success to target someone else
 
-    if ((victim = ch->fighting) == NULL && (victim = get_char_world(ch, arg1)) == NULL)
+    if ((victim = mage_attack_target(ch,arg1)) == NULL)
     {
         stc("They aren't here.\n\r", ch);
         return;
     }
 
+    if (!victim->in_room) return;
     correspondence = correspondence_level(ch, victim);
 
     if (correspondence > ch->spheres[MCOR])
@@ -382,26 +533,26 @@ void do_brittle_bones(CHAR_DATA * ch, char * argument)
 	return;
     }
 
-    power -= correspondence;
-
-    if (ch->mana < MANA_BRITTLE_BONES + (correspondence * correspondence * 100) + (quint * MANA_QUINT))
-    {
-        send_to_char("You don't have enough mana to cast brittle bones.\n\r", ch);
-        return;
+    sn=skill_lookup("brittle bones");
+    if (sn<0 || is_affected(victim,sn)) {
+        stc("Brittle Bones is unavailable or already affects that target.\n\r",ch); return;
     }
-
-    ch->mana -= MANA_BRITTLE_BONES + (correspondence * correspondence * 100) + (quint * MANA_QUINT);
-
     to_room =  victim->in_room;
     location = ch->in_room;
-
-    char_from_room(ch);
-    char_to_room(ch, to_room);
-
-    if (is_safe(ch,victim)) return;
-
-    char_from_room(ch);
-    char_to_room(ch, location);
+    if (IS_BUI(victim) || (victim!=ch && is_same_group(ch,victim))
+        || (victim!=ch && !IS_NPC(victim) && (!CAN_PK(ch) || !CAN_PK(victim)))
+        || IS_SET(location->room_flags|to_room->room_flags,
+            ROOM_SAFE|ROOM_PRIVATE|ROOM_SOLITARY|ROOM_NO_TELEPORT)) return;
+    protected=FALSE;
+    if (victim!=ch) {
+        if (location!=to_room) { char_from_room(ch); char_to_room(ch,to_room); }
+        protected=is_safe(ch,victim);
+        if (ch->in_room!=location) { char_from_room(ch); char_to_room(ch,location); }
+    }
+    if (protected || !mage_pay_cost(ch,quint,
+        MANA_BRITTLE_BONES+correspondence*correspondence*100,MANA_QUINT)) return;
+    power=spellpower(ch,3)+quint-correspondence;
+    if (power<=0) { stc("Brittle Bones fails to take effect.\n\r",ch); return; }
 
     if (!IS_NPC(victim) && victim->pcdata->atm >= number_percent())
     {
@@ -413,14 +564,7 @@ void do_brittle_bones(CHAR_DATA * ch, char * argument)
         act("$n makes $N's bones become weak and fragile.",ch,NULL,victim,TO_NOTVICT);
         act("$n makes your bones become weak and fragile.",ch,NULL,victim,TO_VICT);
 
-    if ((sn = skill_lookup("brittle bones")) < 0)
-    {
-        stc("Buggyness! So umm, time to go yell at Dude... ;)\n\r",ch);
-        return;
-    }
-
-    if ( is_affected (victim, sn ) ) return;
-
+    memset(&af,0,sizeof(af));
     af.type = sn;
     af.location = APPLY_NONE;
     af.modifier = power * 2.5;
@@ -438,9 +582,8 @@ void do_mutate_ephemera(CHAR_DATA* ch, char * argument)
 char arg1[MAX_STRING_LENGTH], arg2[MAX_STRING_LENGTH];
     CHAR_DATA * victim;
     long power, quint, correspondence;
-    ROOM_INDEX_DATA *location;
-    ROOM_INDEX_DATA *to_room;
 
+    if (!mage_numeric_input(ch,argument,2)) return;
     quint = 0;
     argument = one_argument(argument, arg1);
     argument = one_argument(argument, arg2);
@@ -457,41 +600,11 @@ char arg1[MAX_STRING_LENGTH], arg2[MAX_STRING_LENGTH];
         return;
     }
 
-    power = spellpower(ch, 5);
-
-    if (arg2[0] != '\0')
-    {
-        quint = atoi( arg2 );
-
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have that much quintessence.\n\r", ch);
-        return;
-    }
-     else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-
-        if (quint < 0)
-        {
-            send_to_char("Errorness with quintessence.\n\r", ch);
-            return;
-        }
-
-        power += quint;
-        ch->quint[1] -= quint;
-    }
+    if (!mage_quintessence(ch,arg2,0,&quint)) return;
 
    // if (victim != ch) power -= 1; //costs 1 success to target someone else
 
-    if ((victim = ch->fighting) == NULL && (victim = get_char_world(ch, arg1)) == NULL)
+    if ((victim = mage_attack_target(ch,arg1)) == NULL)
     {
         stc("They aren't here.\n\r", ch);
         return;
@@ -505,28 +618,15 @@ char arg1[MAX_STRING_LENGTH], arg2[MAX_STRING_LENGTH];
         return;
     }
 
-    power -= correspondence;
-
-    power += 2; //countering the same room correspondence cost
-
-    if (ch->mana < MANA_MUTATE_EPHEMERA + (correspondence * correspondence * 100) + (quint * MANA_QUINT))
+    if (IS_XTRA(victim,XTRA_MUTATE_EPHEMERA))
     {
-        send_to_char("You don't have enough mana to cast mutate ephemera.\n\r", ch);
+        stc("They are already affected by Mutate Ephemera.\n\r",ch);
         return;
     }
-
-    ch->mana -= MANA_MUTATE_EPHEMERA + (correspondence * correspondence * 100) + (quint * MANA_QUINT);
-
-    to_room =  victim->in_room;
-    location = ch->in_room;
-
-    char_from_room(ch);
-    char_to_room(ch, to_room);
-
-    if (is_safe(ch,victim)) return;
-
-    char_from_room(ch);
-    char_to_room(ch, location);
+    if (!mage_target_ready(ch,victim,FALSE) || !mage_pay_cost(ch,quint,
+        MANA_MUTATE_EPHEMERA+correspondence*correspondence*100,MANA_QUINT)) return;
+    if (!mage_roll(ch,5,&power)) return;
+    power+=quint+2-correspondence;
 
     if (!IS_NPC(victim) && victim->pcdata->atm >= number_percent())
     {
@@ -882,9 +982,8 @@ void do_alterweight( CHAR_DATA *ch, char * argument)
     CHAR_DATA * victim;
     AFFECT_DATA af;
     long dam, power, quint, sn, correspondence;
-    ROOM_INDEX_DATA *location;
-    ROOM_INDEX_DATA *to_room;
 
+    if (!mage_numeric_input(ch,argument,2)) return;
     dam = 0;
     quint = 0;
     argument = one_argument(argument, arg1);
@@ -902,41 +1001,11 @@ void do_alterweight( CHAR_DATA *ch, char * argument)
         return;
     }
 
-    power = spellpower(ch, 5);
-
-    if (arg2[0] != '\0')
-    {
-        quint = atoi( arg2 );
-
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have that much quintessence.\n\r", ch);
-        return;
-    }
-     else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-
-        if (quint < 0)
-        {
-            send_to_char("Errorness with quintessence.\n\r", ch);
-            return;
-        }
-
-        power += quint;
-        ch->quint[1] -= quint;
-    }
+    if (!mage_quintessence(ch,arg2,0,&quint)) return;
 
    // if (victim != ch) power -= 1; //costs 1 success to target someone else
 
-    if ((victim = ch->fighting) == NULL && (victim = get_char_world(ch, arg1)) == NULL)
+    if ((victim = mage_attack_target(ch,arg1)) == NULL)
     {
         stc("They aren't here.\n\r", ch);
         return;
@@ -950,32 +1019,15 @@ void do_alterweight( CHAR_DATA *ch, char * argument)
         return;
     }
 
-    power -= correspondence;
-
-    if (ch->mana < MANA_ALTER_WEIGHT + (correspondence * correspondence * 100) + (quint * MANA_QUINT))
-    {
-        send_to_char("You don't have enough mana to cast alter weight.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_ALTER_WEIGHT + (correspondence * correspondence * 100) + (quint * MANA_QUINT);
-
-    to_room =  victim->in_room;
-    location = ch->in_room;
-
-    char_from_room(ch);
-    char_to_room(ch, to_room);
-
-    if (is_safe(ch,victim)) return;
-
-    char_from_room(ch);
-    char_to_room(ch, location);
-
     if ((!IS_NPC(victim) && correspondence == 5) || (IS_NPC(victim) && victim->level > 800))
     {
         stc("You may not target them globally.\n\r", ch);
         return;
     }
+    if (!mage_target_ready(ch,victim,FALSE) || !mage_pay_cost(ch,quint,
+        MANA_ALTER_WEIGHT+correspondence*correspondence*100,MANA_QUINT)) return;
+    if (!mage_roll(ch,5,&power)) return;
+    power=UMAX(1,power-correspondence+quint);
 
     if (!IS_NPC(victim) && victim->pcdata->atm >= number_percent())
     {
@@ -1147,6 +1199,7 @@ void do_step_sideways(CHAR_DATA* ch, char * argument)
     char arg[MAX_STRING_LENGTH], buf[MAX_STRING_LENGTH];
     long power, quint, dam, loop;
 
+    if (!mage_numeric_input(ch,argument,1)) return;
     one_argument( argument, arg);
 
     if (!IS_MAGE(ch))
@@ -1167,44 +1220,20 @@ void do_step_sideways(CHAR_DATA* ch, char * argument)
 	return;
     }
 
-    power = spellpower(ch, 3);
+    if (!mage_quintessence(ch,arg,0,&quint)) return;
+    if (IS_SET(ch->in_room->room_flags,ROOM_NO_TELEPORT))
+    {
+        stc("This room prevents planar travel.\n\r",ch);
+        return;
+    }
+    if (!mage_pay_cost(ch,quint,0,0) || !mage_roll(ch,3,&power)) return;
     if (power <= 0)
     {
 	send_to_char("You failed to step through the gauntlet.\n\r", ch);
 	return;
     }
 
-    power = 0;
-
-    if (arg[0] != '\0')
-    {
-        quint = atoi( arg );
-
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have that much quintessence.\n\r", ch);
-        return;
-    }
-    else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-
-        if (quint < 0)
-        {
-            send_to_char("Errorness with quintessence.\n\r", ch);
-            return;
-        }
-
-        power += quint;
-        ch->quint[1] -= quint;
-    }
+    power = quint;
     dam = 0;
 
     for(loop = 0; loop < (ch->arete + ch->paradox - power); loop++)
@@ -1240,6 +1269,7 @@ void do_break_dreamshell(CHAR_DATA* ch, char * argument)
     char arg[MAX_STRING_LENGTH], buf[MAX_STRING_LENGTH];
     long power, quint, dam, loop;
 
+    if (!mage_numeric_input(ch,argument,1)) return;
     one_argument( argument, arg);
 
     if (!IS_MAGE(ch))
@@ -1260,44 +1290,20 @@ void do_break_dreamshell(CHAR_DATA* ch, char * argument)
 	return;
     }
 
-    power = spellpower(ch, 5);
+    if (!mage_quintessence(ch,arg,0,&quint)) return;
+    if (IS_SET(ch->in_room->room_flags,ROOM_NO_TELEPORT))
+    {
+        stc("This room prevents planar travel.\n\r",ch);
+        return;
+    }
+    if (!mage_pay_cost(ch,quint,0,0) || !mage_roll(ch,5,&power)) return;
     if (power <= 0)
     {
         send_to_char("You failed to step through the dreamshell.\n\r", ch);
         return;
     }
 
-    power = 0;
-
-    if (arg[0] != '\0')
-    {
-        quint = atoi( arg );
-
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have that much quintessence.\n\r", ch);
-        return;
-    }
-    else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-
-        if (quint < 0)
-        {
-            send_to_char("Errorness with quintessence.\n\r", ch);
-            return;
-        }
-
-        power += quint;
-        ch->quint[1] -= quint;
-    }
+    power = quint;
     dam = 0;
 
     for(loop = 0; loop < (ch->arete + ch->paradox - power); loop++)
@@ -1332,6 +1338,7 @@ void do_break_dreamshell(CHAR_DATA* ch, char * argument)
 long correspondence_level(CHAR_DATA* ch, CHAR_DATA* victim)
 {
     long level;
+    if (!ch || !victim || !ch->in_room || !victim->in_room) return 7;
     
     if (ch == victim) level = 1;
     else if (ch->in_room == victim->in_room) level = 2;
@@ -1395,6 +1402,7 @@ void do_holy_smote(CHAR_DATA *ch, char * argument)
 {
 
     long power, quint;
+    if (!mage_numeric_input(ch,argument,0)) return;
 
     if (!IS_MAGE(ch))
     {
@@ -1418,25 +1426,8 @@ void do_holy_smote(CHAR_DATA *ch, char * argument)
     
     quint = 2;
 
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have enough quintessence to use holy smote.\n\r", ch);
-        return;
-    }
-    else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-
-    if (ch->mana < MANA_HOLY_SMOTE)
-    {
-        send_to_char("You don't have enough mana to cast holy smote.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_HOLY_SMOTE;
-
-    power = spellpower(ch, 2); //Holy Smote uses lvl 2 prime
+    if (!mage_pay_cost(ch,quint,MANA_HOLY_SMOTE,0)
+        || !mage_roll(ch,2,&power)) return;
 
     if (power <= 0)
     {
@@ -1456,6 +1447,10 @@ void do_mageenchant(CHAR_DATA *ch, char * argument)
     char arg[MAX_INPUT_LENGTH];
     OBJ_DATA * obj;
     long power, quintessence;
+    /* One carried-object argument, no numeric or trailing options. */
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room || !argument
+        || ch->hit<=0 || ch->position<POS_RESTING || IS_BUI(ch)
+        || strlen(argument)>=MAX_INPUT_LENGTH) return;
 
     if (!IS_MAGE(ch))
     {
@@ -1470,6 +1465,7 @@ void do_mageenchant(CHAR_DATA *ch, char * argument)
     }
 
      argument = one_argument( argument, arg );
+    if (*argument) { stc("Use mageenchant <carried weapon>.\n\r",ch); return; }
 
     if ( ( obj = get_obj_carry( ch, arg ) ) == NULL )
     {
@@ -1497,31 +1493,8 @@ void do_mageenchant(CHAR_DATA *ch, char * argument)
 
    quintessence = 5;
 
-    if (quintessence > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have enough quintessence.\n\r", ch);
-        return;
-    }
-    else if (quintessence > ch->quint[BODY] && (quintessence - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quintessence);
-    }
-    else if (quintessence > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-   
-    if (ch->mana < MANA_ENCHANT)
-    {
-        send_to_char("You don't have enough mana to cast enchant.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_ENCHANT;
-
-    power = spellpower(ch, 3); //enchant uses lvl 3 prime
+    if (!mage_pay_cost(ch,quintessence,MANA_ENCHANT,0)
+        || !mage_roll(ch,3,&power)) return;
 
     if (power <= 0)
     {
@@ -1758,9 +1731,8 @@ void do_mage_heal(CHAR_DATA *ch, char*argument)
     char arg [MAX_INPUT_LENGTH], arg2[MAX_INPUT_LENGTH], buf1[MAX_STRING_LENGTH], buf2[MAX_STRING_LENGTH], buf3[MAX_STRING_LENGTH];
     CHAR_DATA *victim;
     long healing, power, loop, quint, correspondence;
-    ROOM_INDEX_DATA *location;
-    ROOM_INDEX_DATA *to_room;
 
+    if (!mage_numeric_input(ch,argument,2)) return;
     argument = one_argument(argument, arg);
     argument = one_argument(argument, arg2);
     healing = 0;
@@ -1801,49 +1773,16 @@ void do_mage_heal(CHAR_DATA *ch, char*argument)
 	return;
     }
 
-    power = spellpower(ch, 2);//healing uses a lvl 2 sphere
-
-    power -= correspondence;
-
-    quint = atoi(arg2);
-
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
+    if (!mage_quintessence(ch,arg2,0,&quint)) return;
+    if (victim->hit>=victim->max_hit)
     {
-        send_to_char("You do not have that much quintessence.\n\r", ch);
+        stc("They are already fully healed.\n\r",ch);
         return;
     }
-    else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-
-    power += quint;
-
-    if (ch->mana < MANA_MAGE_HEAL + (correspondence * correspondence * 100) + (quint * MANA_QUINT))
-    {
-        send_to_char("You don't have enough mana to use healing.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_MAGE_HEAL + (correspondence * correspondence * 100) + (quint * MANA_QUINT);
-    ch->quint[1] -= quint;
-
-    to_room =  victim->in_room;
-    location = ch->in_room;
-
-    char_from_room(ch);
-    char_to_room(ch, to_room);
-
-    if (is_safe(ch,victim)) return;
-
-    char_from_room(ch);
-    char_to_room(ch, location);
+    if (!mage_target_ready(ch,victim,TRUE) || !mage_pay_cost(ch,quint,
+        MANA_MAGE_HEAL+correspondence*correspondence*100,MANA_QUINT)) return;
+    if (!mage_roll(ch,2,&power)) return;
+    power=UMAX(0,power-correspondence+quint);
 
     for (loop = 0; loop < power; loop++)
 	healing += number_range(600, 1200);
@@ -1872,9 +1811,8 @@ void do_better_body(CHAR_DATA *ch, char *argument)
     CHAR_DATA* victim;
     char arg1[MAX_STRING_LENGTH], arg2[MAX_STRING_LENGTH], arg3[MAX_STRING_LENGTH], buf[MAX_STRING_LENGTH];
     long quint, power, correspondence;
-    ROOM_INDEX_DATA *location;
-    ROOM_INDEX_DATA *to_room;
 
+    if (!mage_numeric_input(ch,argument,3)) return;
     argument = one_argument(argument, arg1);
     argument = one_argument(argument, arg2);
     argument = one_argument(argument, arg3);
@@ -1893,43 +1831,13 @@ void do_better_body(CHAR_DATA *ch, char *argument)
         return;
     }
 
-    power = spellpower(ch, 3);
-
-
-    if (arg3[0] != '\0')
+    if (str_cmp(arg2,"str") && str_cmp(arg2,"dex") && str_cmp(arg2,"con")
+        && str_cmp(arg2,"int") && str_cmp(arg2,"wis"))
     {
-        quint = atoi( arg3 );
-
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have that much quintessence.\n\r", ch);
+        stc("Use betterbody <target> <str|dex|con|int|wis> [quintessence].\n\r",ch);
         return;
     }
-    else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-        if (quint < 0)
-        {
-            send_to_char("Errorness with quintessence.\n\r", ch);
-            return;
-        }
-
-        power += quint;
-        ch->quint[1] -= quint;
-    }
-
-    if (power <= 0)
-    {
-        send_to_char("You failed to cast better body.\n\r", ch);
-        return;
-    }
+    if (!mage_quintessence(ch,arg3,0,&quint)) return;
 
    // if (victim != ch) power -= 1; //costs 1 success to target someone else
 
@@ -1947,36 +1855,15 @@ void do_better_body(CHAR_DATA *ch, char *argument)
         return;
     }
 
-    power -= correspondence;
-    power += 2; //counter local correspondence cost
-
-    to_room =  victim->in_room;
-    location = ch->in_room;
-
-    char_from_room(ch);
-    char_to_room(ch, to_room);
-
-    if (is_safe(ch,victim)) return;
-
-    char_from_room(ch);
-    char_to_room(ch, location);
-
-    if (ch->mana < MANA_BETTER_BODY + (correspondence * correspondence * 100) + (quint * MANA_QUINT))
-    {
-        send_to_char("You don't have enough mana to cast better body.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_BETTER_BODY + (correspondence * correspondence * 100) + (quint * MANA_QUINT);
-
-
-  	if (power < 1) power = 1;
-
 	if (IS_XTRA(victim, XTRA_BETTER_STR) || IS_XTRA(victim, XTRA_BETTER_DEX) ||IS_XTRA(victim, XTRA_BETTER_CON) ||IS_XTRA(victim, XTRA_BETTER_INT) ||IS_XTRA(victim, XTRA_BETTER_WIS))
 	{
 	    send_to_char("They are already affected by better body.\n\r", ch);
 	    return;
 	}
+    if (!mage_target_ready(ch,victim,TRUE) || !mage_pay_cost(ch,quint,
+        MANA_BETTER_BODY+correspondence*correspondence*100,MANA_QUINT)) return;
+    if (!mage_roll(ch,3,&power)) return;
+    power=UMAX(1,power-correspondence+quint+2);
 
 	if (!str_cmp(arg2, "str")) SET_BIT(victim->xtra, XTRA_BETTER_STR);
 	else if(!str_cmp(arg2, "dex")) SET_BIT(victim->xtra, XTRA_BETTER_DEX);
@@ -2003,9 +1890,8 @@ void do_polymorph_other(CHAR_DATA *ch, char *argument)
     CHAR_DATA * victim;
     OBJ_DATA* obj;
     long power, quint, correspondence;
-    ROOM_INDEX_DATA *location;
-    ROOM_INDEX_DATA *to_room;
 
+    if (!mage_numeric_input(ch,argument,2)) return;
     argument = one_argument(argument, arg1);
     argument = one_argument(argument, arg2);
 
@@ -2023,47 +1909,11 @@ void do_polymorph_other(CHAR_DATA *ch, char *argument)
         return;
     }
 
-    power = spellpower(ch, 5);
-
-    if (arg2[0] != '\0')
-    {
-        quint = atoi( arg2 );
-
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have that much quintessence.\n\r", ch);
-        return;
-    }
-    else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-
-        if (quint < 0)
-        {
-            send_to_char("Errorness with quintessence.\n\r", ch);
-            return;
-        }
-
-        power += quint;
-        ch->quint[1] -= quint;
-    }
-
-    if (power <= 0)
-    {
-	send_to_char("You failed to cast polymorph other.\n\r", ch);
-	return;
-    }
+    if (!mage_quintessence(ch,arg2,0,&quint)) return;
 
    // if (victim != ch) power -= 1; //costs 1 success to target someone else
 
-    if ((victim = ch->fighting) == NULL && (victim = get_char_world(ch, arg1)) == NULL)
+    if ((victim = mage_attack_target(ch,arg1)) == NULL)
     {
         stc("They aren't here.\n\r", ch);
         return;
@@ -2075,7 +1925,7 @@ void do_polymorph_other(CHAR_DATA *ch, char *argument)
 	return;
     }
 
-    if (is_affected(victim, gsn_lycaon))
+    if (is_affected(victim, gsn_lycaon) || IS_POLYAFF(victim,POLY_PIG))
     {
         stc("Lift Lycaon's curse before applying another form.\n\r", ch);
         return;
@@ -2089,26 +1939,12 @@ void do_polymorph_other(CHAR_DATA *ch, char *argument)
         return;
     }
 
-    power -= correspondence;
-
-    if (ch->mana < MANA_POLYMORPH_OTHER + (correspondence * correspondence * 100) + (quint * MANA_QUINT))
-    {
-        send_to_char("You don't have enough mana to cast polymorph other.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_POLYMORPH_OTHER + (correspondence * correspondence * 100) + (quint * MANA_QUINT);
-
-    to_room =  victim->in_room;
-    location = ch->in_room;
-
-    char_from_room(ch);
-    char_to_room(ch, to_room);
-
-    if (is_safe(ch,victim)) return;
-
-    char_from_room(ch);
-    char_to_room(ch, location);
+    if (!mage_target_ready(ch,victim,FALSE) || !mage_pay_cost(ch,quint,
+        MANA_POLYMORPH_OTHER+correspondence*correspondence*100,MANA_QUINT)) return;
+    if (!mage_roll(ch,5,&power)) return;
+    power+=quint;
+    if (power<=0) { stc("You failed to cast polymorph other.\n\r",ch); return; }
+    power-=correspondence;
 
     do_stance(victim, ""); //can't stance while in polymorph
 
@@ -2202,15 +2038,19 @@ void do_polymorph_other(CHAR_DATA *ch, char *argument)
 void do_friction_curse(CHAR_DATA *ch, char *argument)
 {
 
-    char arg[MAX_STRING_LENGTH], arg2[MAX_INPUT_LENGTH], buf1[MAX_STRING_LENGTH],buf2[MAX_STRING_LENGTH],buf3[MAX_STRING_LENGTH];
+    char arg[MAX_STRING_LENGTH], arg2[MAX_INPUT_LENGTH], extra[MAX_INPUT_LENGTH], buf1[MAX_STRING_LENGTH],buf2[MAX_STRING_LENGTH],buf3[MAX_STRING_LENGTH];
     CHAR_DATA * victim;
     AFFECT_DATA af;
     long power, sn, correspondence, quint;
     ROOM_INDEX_DATA *location;
     ROOM_INDEX_DATA *to_room;
+    bool protected;
 
-    one_argument( argument, arg);
-    one_argument( argument, arg2);
+    if (!mage_numeric_input(ch,argument,2)) return;
+    argument=one_argument(argument,arg);
+    argument=one_argument(argument,arg2);
+    one_argument(argument,extra);
+    if (extra[0]) { stc("Use friction <target> [quintessence].\n\r",ch); return; }
 
 
     quint = 0;
@@ -2227,15 +2067,13 @@ void do_friction_curse(CHAR_DATA *ch, char *argument)
 	return;
     }
 
-    if (arg[0] == '\0')
-	victim = ch;
-
-    else if ((victim = ch->fighting) == NULL && (victim = get_char_world(ch, arg)) == NULL)
+    if ((victim = mage_attack_target(ch,arg)) == NULL)
     {
     	send_to_char("They aren't here.\n\r", ch);
     	return;
     }
 
+    if (!victim || !victim->in_room) return;
     correspondence = correspondence_level(ch, victim);
 
     if (correspondence > ch->spheres[MCOR])
@@ -2244,62 +2082,32 @@ void do_friction_curse(CHAR_DATA *ch, char *argument)
         return;
     }
 
-    power -= correspondence;
-
-            quint = atoi( arg2 );
-
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have that much quintessence.\n\r", ch);
-        return;
+    if (!mage_quintessence(ch,arg2,0,&quint)) return;
+    sn=skill_lookup("friction curse");
+    if (sn<0 || is_affected(victim,sn)) {
+        stc("Friction Curse is unavailable or already affects that target.\n\r",ch); return;
     }
-    else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
+    location=ch->in_room; to_room=victim->in_room;
+    if (!to_room || IS_BUI(victim) || (victim!=ch && is_same_group(ch,victim))
+        || (victim!=ch && !IS_NPC(victim) && (!CAN_PK(ch) || !CAN_PK(victim)))
+        || IS_SET(location->room_flags|to_room->room_flags,
+            ROOM_SAFE|ROOM_PRIVATE|ROOM_SOLITARY|ROOM_NO_TELEPORT)) return;
+    /* Native is_safe needs colocation. Always return before any exit or cost. */
+    protected=FALSE;
+    if (victim!=ch) {
+        if (location!=to_room) { char_from_room(ch); char_to_room(ch,to_room); }
+        protected=is_safe(ch,victim);
+        if (ch->in_room!=location) { char_from_room(ch); char_to_room(ch,location); }
     }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-
-        if (quint < 0)
-        {
-            send_to_char("Errorness with quintessence.\n\r", ch);
-            return;
-        }
-
-        power += quint;
-        ch->quint[1] -= quint;
-
-
-    if (ch->mana < MANA_FRICTION_CURSE + (correspondence * correspondence * 100) + (quint * MANA_QUINT))
-    {
-        send_to_char("You don't have enough mana to cast friction curse.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_FRICTION_CURSE + (correspondence * correspondence * 100) + (quint * MANA_QUINT);
-    power = spellpower(ch, 3); //fiction curse uses lvl 3 forces
+    if (protected || !mage_pay_cost(ch,quint,
+        MANA_FRICTION_CURSE+correspondence*correspondence*100,MANA_QUINT)) return;
+    power=spellpower(ch,3)-correspondence+quint;
 
     if (power <= 0)
     {
 	send_to_char("You failed to cast Friction Curse.\n\r", ch);
 	return;
     }
-
-    to_room =  victim->in_room;
-    location = ch->in_room;
-
-    char_from_room(ch);
-    char_to_room(ch, to_room);
-
-    if (is_safe(ch,victim)) return;
-
-    char_from_room(ch);
-    char_to_room(ch, location);
-
 
     if (!IS_NPC(victim) && victim->pcdata->atm >= number_percent())
     {
@@ -2319,6 +2127,7 @@ void do_friction_curse(CHAR_DATA *ch, char *argument)
 	 return;
     }
 
+    memset(&af,0,sizeof(af));
     af.type = sn;
     af.location = APPLY_NONE;
     af.modifier = 0;
@@ -2343,9 +2152,8 @@ void do_electrical_chaos( CHAR_DATA *ch, char *argument)
     char arg1[MAX_STRING_LENGTH], arg2[MAX_STRING_LENGTH],  buf1[MAX_STRING_LENGTH], buf2[MAX_STRING_LENGTH],buf3[MAX_STRING_LENGTH];
     CHAR_DATA * victim;
     long dam, power, quint, correspondence;
-    ROOM_INDEX_DATA *location;
-    ROOM_INDEX_DATA *to_room;
 
+    if (!mage_numeric_input(ch,argument,2)) return;
     dam = 0;
     quint = 0;
     argument = one_argument(argument, arg1);
@@ -2363,49 +2171,14 @@ void do_electrical_chaos( CHAR_DATA *ch, char *argument)
         return;
     }
 
-    power = spellpower(ch, 2);
-
-    if (arg2[0] != '\0')
-    {
-        quint = atoi( arg2 );
-
-    if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-    {
-        send_to_char("You do not have that much quintessence.\n\r", ch);
-        return;
-    }
-    else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-    {
-        hearts_blood(ch, quint);
-    }
-    else if (quint > ch->quint[BODY])
-    {
-        send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-        return;
-
-    }
-
-        if (quint < 0)
-        {
-            send_to_char("Errorness with quintessence.\n\r", ch);
-            return;
-        }
-
-        power += quint;
-    }
-
-    power += 1; //forces spells do slightly more damage
+    if (!mage_quintessence(ch,arg2,0,&quint)) return;
 
    // if (victim != ch) power -= 1; //costs 1 success to target someone else
 
-    if (arg1[0] == '\0' && ch->fighting != NULL) victim = ch->fighting;
-    else if ((victim = get_char_room(ch, arg1)) == NULL)
+    if ((victim = mage_attack_target(ch,arg1)) == NULL)
     {
-	if ((victim = get_char_world(ch, arg1)) == NULL)
-	{
         stc("They aren't here.\n\r", ch);
 	return;
-	}
     }
 
     if (ch == victim) return;
@@ -2418,32 +2191,20 @@ void do_electrical_chaos( CHAR_DATA *ch, char *argument)
         return;
     }
 
-    power -= correspondence;
-
-    if (ch->mana < MANA_ELECTRICAL_CHAOS + (correspondence * correspondence * 100) + (quint * MANA_QUINT))
-    {
-        send_to_char("You don't have enough mana to cast electrical chaos.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_ELECTRICAL_CHAOS + (correspondence * correspondence * 100) + (quint * MANA_QUINT);
-    ch->quint[1] -= quint;
-
-    to_room =  victim->in_room;
-    location = ch->in_room;
-
-    char_from_room(ch);
-    char_to_room(ch, to_room);
-
-    if (is_safe(ch,victim)) return;
-
-    char_from_room(ch);
-    char_to_room(ch, location);
-
     if ((!IS_NPC(victim) && correspondence == 5) || (IS_NPC(victim) && victim->level > 800 && correspondence == 5))
     {
 	stc("You may not target them globally.\n\r", ch);
 	return;
+    }
+    if (!mage_target_ready(ch,victim,FALSE) || !mage_pay_cost(ch,quint,
+        MANA_ELECTRICAL_CHAOS+correspondence*correspondence*100,MANA_QUINT)) return;
+    if (!mage_roll(ch,2,&power)) return;
+    power+=quint+1-correspondence;
+    if (power<=0)
+    {
+        stc("The electrical current fizzles out.\n\r",ch);
+        WAIT_STATE(ch,8);
+        return;
     }
 
     if (!IS_NPC(victim) && victim->pcdata->atm >= number_percent())
@@ -2481,11 +2242,12 @@ void do_inferno( CHAR_DATA *ch, char *argument)
     long dam, power, quint, victims;
     bool botch;
 
+    if (!mage_numeric_input(ch,argument,1)) return;
     dam = 0;
     quint = 0;
     argument = one_argument(argument, arg1);
 
-    if (arg1[0] != '\0') quint = atoi(arg1);
+    if (arg1[0] != '\0' && !mage_quintessence(ch,arg1,0,&quint)) return;
 
     if (!IS_MAGE(ch))
     {
@@ -2499,62 +2261,25 @@ void do_inferno( CHAR_DATA *ch, char *argument)
         return;
     }
 
-    if (ch->mana < MANA_INFERNO + (quint * MANA_QUINT))
-    {
-        send_to_char("You don't have enough mana to cast inferno.\n\r", ch);
-        return;
-    }
-
-
-    power = spellpower(ch, 5);
-    if (power > 0) botch = FALSE;
-
-    if (arg1[0] != '\0')
-    {
-
-        if (quint > ch->quint[BODY] && !IS_XTRA(ch, XTRA_HEARTS_BLOOD))
-        {
-            send_to_char("You do not have that much quintessence.\n\r", ch);
-            return;
-        }
-        else if (quint > ch->quint[BODY] && (quint - ch->quint[BODY]) < 6)
-        {
-            hearts_blood(ch, quint);
-        }
-        else if (quint > ch->quint[BODY])
-        {
-            send_to_char("You cannot use heart's blood too put more than 5 quintessence into a spell.\n\r", ch);
-            return;
-
-        }
-
-	if (quint < 0)
-	{
-	    send_to_char("Errorness with quintessence.\n\r", ch);
-	    return;
-	}
-
-        power += quint;
-        ch->quint[1] -= quint;
-    }
-
-    ch->mana -= MANA_INFERNO + (quint * MANA_QUINT);
-
-    power+=3; //forces spells do slightly more damage, balacing as a high level sphere damage was sucking
-
-   // if (victim != ch) power -= 1; //costs 1 success to target someone else
-
     victims = 0;
 
     for ( victim = ch->in_room->people; victim != NULL; victim = vch_next )
     {
 	vch_next = victim->next_in_room;
-	if (victim != ch && !is_safe(ch, victim) && !is_same_group(ch, victim) ) victims++;
+        if (victim!=ch && !is_same_group(ch,victim)
+            && mage_target_ready(ch,victim,FALSE)) victims++;
     }
-
+    if (!victims) { stc("There are no legal targets for Inferno here.\n\r",ch); return; }
+    if (!mage_pay_cost(ch,quint,MANA_INFERNO,MANA_QUINT)
+        || !mage_roll(ch,5,&power)) return;
+    botch=(power<=0);
+    power+=quint+3;
     power -= victims/2;
-
-    if (power <=0 && !botch) power = 1;
+    if (power<=0)
+    {
+        if (botch) { stc("Your Inferno fizzles out.\n\r",ch); WAIT_STATE(ch,12); return; }
+        power=1;
+    }
 
     dam = number_range(900 * power, 1300 * power);
 
@@ -2563,7 +2288,7 @@ void do_inferno( CHAR_DATA *ch, char *argument)
         vch_next = victim->next_in_room;
 	if (is_same_group(ch, victim)) continue;
 	if (!IS_NPC(victim) && !CAN_PK(victim)) continue;
-     	if (victim != ch && !is_safe(ch, victim) )
+     	if (victim != ch && mage_target_ready(ch,victim,FALSE))
 	{
             if (victim->fighting != ch && ch != victim && victim->fighting == NULL)  set_fighting(victim, ch);
 
@@ -2599,175 +2324,77 @@ void do_inferno( CHAR_DATA *ch, char *argument)
 //Time 3: Contingency
 void do_contingency( CHAR_DATA* ch, char * argument)
 {
-   char arg1[MAX_STRING_LENGTH], arg2[MAX_STRING_LENGTH];
-
-    argument = one_argument(argument, arg1);
-    argument = one_argument(argument, arg2);
-
-     if (!IS_MAGE(ch))
+    char key[MAX_INPUT_LENGTH];
+    const MAGE_TIME_SPELL *spell;
+    long cost;
+    if (!ch || !ch->pcdata || IS_NPC(ch) || !argument
+        || strlen(argument)>=sizeof(key) || !IS_MAGE(ch)
+        || !mage_numeric_input(ch,"",0)) return;
+    argument=one_argument(argument,key);
+    if (*argument) { stc("Use contingency [spell|clear].\n\r",ch); return; }
+    if (ch->spheres[MTIM]<3) { stc("Contingency requires Time 3.\n\r",ch); return; }
+    if (!str_cmp(key,"clear"))
     {
-        send_to_char("Huh?\n\r", ch);
+        free_string(ch->contingency); ch->contingency=str_dup("");
+        stc("Your contingency is cleared.\n\r",ch); return;
+    }
+    if (!key[0] && !ch->fighting)
+    {
+        stc("Prepared contingency: ",ch);
+        stc(ch->contingency && ch->contingency[0] ? ch->contingency : "none",ch);
+        stc(".\n\r",ch); return;
+    }
+    spell=mage_time_find(key[0] ? key : ch->contingency,1);
+    if (!spell || ch->spheres[spell->sphere]<spell->level)
+    {
+        stc("Choose a mastered spell: brittlebones, mutateephemera, electricalchaos, frictioncurse, inferno, polymorphother or alterweight.\n\r",ch);
         return;
     }
-
-    if (ch->spheres[MTIM] < 3)
+    if (key[0])
     {
-        send_to_char("You do not have enough knowledge of the time sphere to use contingency.\n\r", ch);
-        return;
+        if (ch->contingency && !str_cmp(ch->contingency,spell->name)) return;
+        if (!mage_pay_cost(ch,0,MANA_CONTINGENCY,0)) return;
+        free_string(ch->contingency); ch->contingency=str_dup(spell->name);
+        stc("Your contingency has been set.\n\r",ch); return;
     }
-
-    if (ch->mana < MANA_CONTINGENCY)
-    {
-        send_to_char("You don't have enough mana to use contingency.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_CONTINGENCY;
-  
-    //no argument = use the contingency as long as the player is fighting
-    if (!str_cmp(arg1, "") && ch->fighting != NULL)
-    {
-	if (!str_cmp(ch->contingency, "brittlebones"))
-	{
-	    do_brittle_bones(ch, ch->fighting->name);
-	    ch->contingency = "";
-	    return;
-	}
-	else if (!str_cmp(ch->contingency, "mutateephemera"))
-        {
-            do_mutate_ephemera(ch, ch->fighting->name);
-            ch->contingency = "";
-	    return;
-        }
-/*	else if (!str_cmp(ch->contingency, "electricalchaos"))
-        {
-            do_electrical_chaos(ch, ch->fighting->name);
-            ch->contingency = "";
-            return;
-        }*/
-	else if (!str_cmp(ch->contingency, "frictioncurse"))
-        {
-            do_friction_curse(ch, ch->fighting->name);
-            ch->contingency = "";
-            return;
-        }
-/*	else if (!str_cmp(ch->contingency, "inferno"))
-        {
-            do_inferno(ch, ch->fighting->name);
-            ch->contingency = "";
-            return;
-        }*/
-	else if (!str_cmp(ch->contingency, "polymorphother"))
-        {
-            do_polymorph_other(ch, ch->fighting->name);
-            ch->contingency = "";
-            return;
-        }
-	else if (!str_cmp(ch->contingency, "alterweight"))
-        {
-            do_alterweight(ch, ch->fighting->name);
-            ch->contingency = "";
-            return;
-        }
-	
-
-    }
-    else //set the contingency
-    {
-        if (!str_cmp(arg1, "brittlebones")) ch->contingency = "brittlebones";
-        else if (!str_cmp(arg1, "mutateephemera")) ch->contingency = "mutateephemera";
-//        else if (!str_cmp(arg1, "electricalchaos")) ch->contingency = "electricalchaos";
-        else if (!str_cmp(arg1, "frictioncurse")) ch->contingency = "frictioncurse";
-//        else if (!str_cmp(arg1, "inferno")) ch->contingency = "inferno";
-        else if (!str_cmp(arg1, "polymorphother")) ch->contingency = "polymorphother";
-        else if (!str_cmp(arg1, "alterweight")) ch->contingency = "alterweight";
-        else
-        {
-            send_to_char("You must select from: brittlebones, mutateephemera, frictioncurse, polymorphother, or alterweight.\n\r", ch);
-            ch->mana += MANA_CONTINGENCY;
-            return;
-        }
-	send_to_char("Your contingency has been set.\n\r", ch);
-    }
-
+    if (!mage_time_ready(ch,spell,"",&cost) || ch->mana<MANA_CONTINGENCY+cost) return;
+    if (!mage_pay_cost(ch,0,MANA_CONTINGENCY,0)) return;
+    /* Disarm before the child can re-enter set_fighting. */
+    free_string(ch->contingency); ch->contingency=str_dup("");
+    spell->cast(ch,"");
 }
 
 //Time 5: Double cast
 void do_double_cast( CHAR_DATA* ch, char * argument)
 {
-
-    char arg1[MAX_STRING_LENGTH];
-//    char  arg2[MAX_STRING_LENGTH];
-    long power;
-
-    argument = one_argument(argument, arg1);
-//    arg2 = argument;
-
-     if (!IS_MAGE(ch))
+    char key[MAX_INPUT_LENGTH];
+    const MAGE_TIME_SPELL *spell;
+    ROOM_INDEX_DATA *origin;
+    long power,cost;
+    if (!ch || !ch->pcdata || IS_NPC(ch) || !argument
+        || strlen(argument)>=sizeof(key) || !IS_MAGE(ch)
+        || !mage_numeric_input(ch,"",0)) return;
+    argument=one_argument(argument,key);
+    if (ch->spheres[MTIM]<5) { stc("Doublecast requires Time 5.\n\r",ch); return; }
+    if (ch->doublecast_timer>0) { stc("Your Doublecast has not recovered.\n\r",ch); return; }
+    spell=mage_time_find(key,2);
+    if (!spell)
     {
-        send_to_char("Huh?\n\r", ch);
+        stc("Choose inferno, mutateephemera, electricalchaos, mageheal or alterweight.\n\r",ch);
         return;
     }
-
-    if (ch->spheres[MTIM] < 5)
+    if (!mage_time_ready(ch,spell,argument,&cost)) return;
+    if (ch->mana<MANA_DOUBLE_CAST+cost)
     {
-        send_to_char("You do not have enough knowledge of the time sphere to use double cast.\n\r", ch);
+        stc("You need enough mana for Doublecast and its first spell attempt.\n\r",ch);
         return;
     }
-
-    if (ch->doublecast_timer > 0)
-    {
-	send_to_char("You need more rest before you can create anouther loophole in time.\n\r", ch);
-	return;
-    }
-
-    if (ch->mana < MANA_DOUBLE_CAST + 7000)
-    {
-        send_to_char("You don't have enough mana to use double cast.\n\r", ch);
-        return;
-    }
-
-    ch->mana -= MANA_DOUBLE_CAST;
-
-
-    power = spellpower(ch, 5);
-
-
-    if (!str_cmp(arg1, "inferno"))
-    {
-	do_inferno(ch, argument);
-	do_inferno(ch, argument);
-    }
-    else if (!str_cmp(arg1, "mutateephemera"))
-    {
-	do_mutate_ephemera(ch, argument);
-	do_mutate_ephemera(ch, argument);
-    }
-    else if (!str_cmp(arg1, "electricalchaos"))
-    {
-	do_electrical_chaos(ch, argument);
-	do_electrical_chaos(ch, argument);
-    }
-    else if (!str_cmp(arg1, "mageheal"))
-    {
-	do_mage_heal(ch, argument);
-	do_mage_heal(ch, argument);
-    }
-    else if (!str_cmp(arg1, "alterweight"))
-    {
-	do_alterweight(ch, argument);
-	do_alterweight(ch, argument);
-    }
-//    if (!str_cmp(arg1, "brittlebones") do_brittlebones(ch, argument)
-    else
-    {
-	send_to_char("You must select from: inferno, mutateephemera, electricalchaos, mageheal, or alterweight.\n\r", ch);
-	ch->mana += MANA_DOUBLE_CAST;
-	return;
-    }
-
-    ch->doublecast_timer = 600 - ( power * 100);
-    if (ch->doublecast_timer < 100) ch->doublecast_timer = 100;
+    if (!mage_pay_cost(ch,0,MANA_DOUBLE_CAST,0) || !mage_roll(ch,5,&power)) return;
+    ch->doublecast_timer=UMAX(100,600-power*100);
+    origin=ch->in_room;
+    spell->cast(ch,argument);
+    if (ch->in_room==origin && ch->hit>0 && ch->position>=POS_RESTING && !IS_BUI(ch))
+        spell->cast(ch,argument);
 }
 
 
@@ -2847,128 +2474,16 @@ void do_spheres( CHAR_DATA *ch, char *argument )
   }
   if ( arg2[0] == '\0' )
   {
-    if ( !str_prefix( arg1, "Life"  ) )
-    {
-	if ( ch->spheres[MLIF] == 0 )
-        {
-	  stc("You have no knowledge of the sphere of Life.\n\r",ch);
-	  return;
-	}
-	else
-        {
-	stc("This sphere will eventually do fun things.\n\r", ch);
-	return;
-	}
-    }
-    if ( !str_prefix( arg1, "Prime" ) )
-    {
-	if ( ch->spheres[MPRI] == 0 )
-	{
-	  stc("You have no knowledge of the sphere of Prime.\n\r",ch);
-	  return;
-	}
-	
-	else
-	{
-	 stc("This sphere will eventually do fun things.\n\r", ch);
-        return;
-	}
-    }
-  
-    if ( !str_prefix( arg1, "Matter" ) )
-    {
-      if ( ch->spheres[MMAT] == 0 )
-      {
-	stc("You have no knowledge of the sphere of Matter.\n\r",ch);
-	return;
-      }
-	else
-      {
-	 stc("This sphere will eventually do fun things.\n\r", ch);
-        return;
-      }
-    }
-    if ( !str_prefix( arg1, "Spirit" ) )
-    {
-      if ( ch->spheres[MSPI] == 0 )
-      {
-	stc("You have no knowledge of the Sphere of Spirit.\n\r", ch);
-	return;
-      }
-	else
-      {
-	 stc("This sphere will eventually do fun things.\n\r", ch);
-        return;
-      }
-    }
-    if ( !str_prefix( arg1, "Entropy" ) )
-    {
-      if ( ch->spheres[MENT] == 0 )
-      {
-	stc("You have no knowledge of the Sphere of Entropy.\n\r",ch);
-	return;
-      }
-      else
-      {
-	 stc("This sphere will eventually do fun things.\n\r", ch);
-        return;
-      }
-    }
-    if ( !str_prefix( arg1, "Correspondence" ) )
-    {
-      if ( ch->spheres[MCOR] == 0 )
-      {
-        stc("You have no knowledge of the sphere of Correspondence.\n\r",ch);
-        return;
-      }
-	else
-	{
-	 stc("This sphere will eventually do fun things.\n\r", ch);
-        return;
-	}
-    }
-    else if ( !str_cmp( arg1, "Mind" ) )
-    {
-	if ( ch->spheres[MMIN] == 0 )
-	{
-        	stc(" You have no knowledge of the Sphere of the Mind.\n\r",ch);
-        	return;
-	}
-	
-	else
-	{
- 		stc("This sphere will eventually do fun things.\n\r", ch);
-        	return;
-	}
-    }
-    else if ( !str_prefix( arg1, "Forces" ) )
-    {
-      if ( ch->spheres[MFOR] == 0 )
-      {
-        stc("You have no knowledge of the Sphere of Forces.\n\r",ch);
-        return;
-      }
-  
-      else
-      {
-	stc("This sphere will eventually do fun things.\n\r", ch);
-        return;
-
-      }
-    }
-    else if ( !str_cmp( arg1, "Time" ) )
-    {
-      if ( ch->spheres[MTIM] == 0 )
-      {
-        stc("You have no knowledge of the Sphere of Time.\n\r",ch);
-        return;
-      }
-      else
-      {
-	stc("This sphere will eventually do fun things.\n\r", ch);
-        return;
-      }
-    }
+    int i;
+    for(i=0;i<9;++i)
+        if (!str_prefix(arg1,sphere_name[i])) {
+            if (ch->spheres[i]<=0)
+                stc("You have no knowledge of that sphere.\n\r",ch);
+            else do_magepowers(ch,"");
+            return;
+        }
+    stc("Unknown sphere. Use sphere to list the nine tracks.\n\r",ch);
+    return;
   }
   if ( !str_cmp( arg2, "learn" ) )
   {
@@ -3072,6 +2587,8 @@ void do_clansphere(CHAR_DATA * ch, char * argument)
 
 void do_magepowers( CHAR_DATA *ch, char * argument)
 {
+if (!ch || IS_NPC(ch) || !ch->pcdata) return;
+if (!IS_MAGE(ch)) { stc("Huh?\n\r",ch); return; }
 stc("                  Mage Powers\n\r", ch);
 stc("----------------------------------------------\n\r", ch);    
 
@@ -3088,7 +2605,7 @@ stc("----------------------------------------------\n\r", ch);
     {
 	stc("Entropy: ", ch);
 	if (ch->spheres[MENT] >= 2) stc("beginnersluck", ch);
-	if (ch->spheres[MENT] >= 4) stc(", brittlebones", ch);
+if (ch->spheres[MENT] >= 3) stc(", brittlebones", ch);
 	if (ch->spheres[MENT] >= 5) stc(", mutateephemera", ch);
 	stc(".\n\r", ch);
     }
@@ -3098,7 +2615,7 @@ stc("----------------------------------------------\n\r", ch);
         stc("Forces: ", ch);
 	if (ch->spheres[MFOR] >= 1) stc("nightsight", ch);
         if (ch->spheres[MFOR] >= 2) stc(", electricalchaos", ch);
-        if (ch->spheres[MFOR] >= 4) stc(", friction", ch);
+        if (ch->spheres[MFOR] >= 3) stc(", friction", ch);
         if (ch->spheres[MFOR] >= 5) stc(", inferno", ch);
         stc(".\n\r", ch);
     }
@@ -3108,7 +2625,7 @@ stc("----------------------------------------------\n\r", ch);
         stc("Life: ", ch);
 	if (ch->spheres[MLIF] >= 1) stc("readaura", ch);
         if (ch->spheres[MLIF] >= 2) stc(", mageheal", ch);
-        if (ch->spheres[MLIF] >= 4) stc(", betterbody", ch);
+        if (ch->spheres[MLIF] >= 3) stc(", betterbody", ch);
         if (ch->spheres[MLIF] >= 5) stc(", polymorphother", ch);
         stc(".\n\r", ch);
     }
@@ -3118,7 +2635,7 @@ stc("----------------------------------------------\n\r", ch);
         stc("Matter: ", ch);
 	if (ch->spheres[MMAT] >= 1) stc("analyze", ch);
         if (ch->spheres[MMAT] >= 2) stc(", shatterwall", ch);
-        if (ch->spheres[MMAT] >= 4) stc(", sculpture", ch);
+        if (ch->spheres[MMAT] >= 3) stc(", sculpture", ch);
         if (ch->spheres[MMAT] >= 5) stc(", alterweight", ch);
         stc(".\n\r", ch);
     }
@@ -3128,7 +2645,7 @@ stc("----------------------------------------------\n\r", ch);
         stc("Mind: ", ch);
         if (ch->spheres[MMIN] >= 1) stc("heighten", ch);
         if (ch->spheres[MMIN] >= 2) stc(", scry", ch);
-        if (ch->spheres[MMIN] >= 4) stc(", shield", ch);
+        if (ch->spheres[MMIN] >= 3) stc(", shield", ch);
         if (ch->spheres[MMIN] >= 5) stc(", mageinvis", ch);
         stc(".\n\r", ch);
     }
@@ -3138,7 +2655,7 @@ stc("----------------------------------------------\n\r", ch);
         stc("Prime: ", ch);
 	if (ch->spheres[MPRI] >= 1) stc("heartsblood", ch);
         if (ch->spheres[MPRI] >= 2) stc(", holysmote", ch);
-        if (ch->spheres[MPRI] >= 4) stc(", mageenchant", ch);
+        if (ch->spheres[MPRI] >= 3) stc(", mageenchant", ch);
         if (ch->spheres[MPRI] >= 5) stc(", ward", ch);
         stc(".\n\r", ch);
     }
@@ -3148,7 +2665,7 @@ stc("----------------------------------------------\n\r", ch);
         stc("Spirit: ", ch);
 	if (ch->spheres[MSPI] >= 1) stc("spiritsense", ch);
         if (ch->spheres[MSPI] >= 2) stc(", spiritcaress", ch);
-        if (ch->spheres[MSPI] >= 4) stc(", stepsideways", ch);
+        if (ch->spheres[MSPI] >= 3) stc(", stepsideways", ch);
         if (ch->spheres[MSPI] >= 5) stc(", breakdreamshell", ch);
         stc(".\n\r", ch);
     }
@@ -3156,7 +2673,7 @@ stc("----------------------------------------------\n\r", ch);
     if (ch->spheres[MTIM] > 0)
     {
         stc("Time: ", ch);
-        if (ch->spheres[MTIM] >= 4) stc("contingency", ch);
+        if (ch->spheres[MTIM] >= 3) stc("contingency", ch);
         if (ch->spheres[MTIM] >= 5) stc(", doublecast", ch);
         stc(".\n\r", ch);
     }

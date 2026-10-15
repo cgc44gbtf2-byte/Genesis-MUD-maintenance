@@ -192,6 +192,7 @@ void improve_weapon( CHAR_DATA *ch, long skill )
 	if (IS_NINJA(ch) || IS_VAMPIRE(ch)) max = 150;
     }
 
+    if (IS_CYBORG(ch)) max = 100 + 20 * cyborg_system_rank(ch, 1);
     if (ch->weapon[skill] >= max)
     {
 	ch->weapon[skill] = max;

@@ -1,56 +1,150 @@
-# Genesis MUD maintenance
+# Genesis Reforged — maintenance source
 
-Finalized source-only maintenance snapshot for building and hosting on your own Linux server. No deployment has been configured or performed.
+Genesis Reforged is a legacy C/telnet, GodWars-derived MUD. This repository
+contains source, area data, tests and maintenance documentation for building
+and operating it on your own Linux host. It is not a web application, and
+this update does not deploy or modify a running server.
 
-## Editable source
+## Connect
 
-The verified archive is also unpacked in [genesis-maintenance/](genesis-maintenance/) so files and future changes can be reviewed directly on GitHub. The ZIP remains available unchanged.
+**Address:** `159.223.164.151` · **Port:** `4000`
 
-To build from a clone (no ZIP extraction required):
+Connect with a MUD client, or:
 
-    git clone https://github.com/cgc44gbtf2-byte/Genesis-MUD-maintenance.git
-    cd Genesis-MUD-maintenance/genesis-maintenance
-    sha256sum --check MANIFEST.sha256
-    make -C src
-    PORT=4000 ./run.sh
+```sh
+telnet 159.223.164.151 4000
+```
 
-The repository is private, so cloning requires your existing GitHub access. Install the Ubuntu/Debian build dependencies listed below first. No hybrid work or deployment configuration has been added.
+This is the supplied connection address, not a guarantee of verified uptime.
+The [MUD listing draft](genesis-maintenance/MUD_LISTING.txt) still requires
+confirmation of the server's PK, roleplaying and live/testing policies.
 
-## Download
+## Current gameplay scope
 
-[Genesis-MUD-maintenance-updated.zip](Genesis-MUD-maintenance-updated.zip) contains 153 files, including a MANIFEST.sha256 covering 152 source/data/documentation/test payloads. Compiled programs, object files, player records, backups and runtime logs are excluded.
+There are 19 standalone parent classes:
 
-ZIP SHA-256: 16ec3140b00cfa5cb463b5e1655b3876e28a62ecc2ff22f00b7bb83328518e6b
+Angel, Cyborg, Deathknight, Demon, Dragon, Drow, Elemental, Gargoyle,
+Highlander, Kuei-jin, Mage, Monk, Moogle, Ninja, Phoenix, Sorcerer,
+Vampire, Werewolf and Wraith.
 
-## Included updates
+- Angel, unified Demon and Cyborg have 33, 71 and 60 implemented catalogue
+  entries respectively. Counts include variants and management systems,
+  not guaranteed one-to-one upstream powers.
+- Phoenix has eight Genesis-native powers. Gargoyle, Kuei-jin, Deathknight,
+  Moogle and Wraith have independent kits and progression/state handling.
+- Sorcerer book mages have a one-time instructional starter grimoire with
+  Spark, Mend and Ward. Chaos book pages reroll colors while preserving
+  their spell role; Chaos is a variant, not a twentieth parent class.
+- Legacy spell, skill, stance, cost, travel and persistence repairs are
+  included, with expanded exact-topic help.
 
-- Earlier class-ability reconstruction and maintenance, skill, combat and fighting-stance repairs.
-- 20 reconstructed legacy spell effects in total, including the final three below.
-- Know Alignment reports a visible same-room NPC's alignment; player alignment is not restored.
-- Frenzy grants timed hitroll +1 and damroll +1, with battle-rage messaging; it does not initiate combat or modify class rage toggles.
-- Darkblessing grants timed hitroll +1, damroll +1 and AC -10 to evil NPCs only.
-- Expanded regression tests, source manifest, build instructions and upgrade precautions.
+**Hybrids are preview-only.** All 171 named two-parent combinations have
+stable registry identities, but conversion, combined inheritance, pure-class
+ascension and respec are not implemented. The future design grants both
+parents' abilities; it supersedes the earlier 75%-selection proposal.
+Do not advertise playable hybrids or ascension as available features.
 
-Hybrid functionality and internal hybrid design notes are excluded. Ventriloquate remains disabled. Spell indices, slots and direct-casting eligibility are unchanged; the three newly finalized handlers are not newly assigned to original-area items or class unlocks. Supplied area files are unchanged from the previous verified release.
+See the [class guide](genesis-maintenance/CLASS_GUIDE.md),
+[kit status](genesis-maintenance/CLASS_KIT_STATUS.md),
+[Cyborg kit](genesis-maintenance/CYBORG_KIT.md),
+[book-mage guide](genesis-maintenance/BOOK_MAGE_STARTER.md) and
+[hybrid roster](genesis-maintenance/HYBRID_ROSTER.md).
 
-## Verification
+## Build on Debian or Ubuntu
 
-Strict GNU C89 native and AddressSanitizer/UndefinedBehaviorSanitizer builds passed with -Wall -Werror and the existing builtin-declaration compatibility exception. All five native live suites passed: legacy spells, class abilities, maintenance fixes, combat-system runtime and smoke/save/reload. The complete legacy live suite also passed under sanitizers, including real item dispatch, logout/login, dispelling and natural expiry. Both linked sanitizer C probes, the native combat probe, and sanitizer resolve/random regressions passed.
+Install the build dependencies:
 
-One new live test initially expected the wrong wand-equipping message; the assertion was corrected and both native/sanitized live spell runs passed. The archive CRC, safe paths, every archived byte and all extracted manifest hashes were validated before upload. Sanitizer leak checking was disabled; these results are not a complete security or leak audit.
+```sh
+sudo apt update
+sudo apt install build-essential libcrypt-dev python3 unzip git
+```
 
-## Build on Ubuntu or Debian
+Clone and build:
 
-    sudo apt update
-    sudo apt install build-essential libcrypt-dev unzip
-    unzip Genesis-MUD-maintenance-updated.zip
-    cd genesis-maintenance
-    sha256sum --check MANIFEST.sha256
-    make -C src
-    PORT=4000 ./run.sh
+```sh
+git clone https://github.com/cgc44gbtf2-byte/Genesis-MUD-maintenance.git
+cd Genesis-MUD-maintenance
+# Before this maintenance PR is merged, switch to its source branch:
+# git switch maintenance/class-kits-help-2026-10-15
+cd genesis-maintenance
+sha256sum --check MANIFEST.sha256
+make -C src
+PORT=4000 ./run.sh
+```
 
-The launcher stays in the foreground. Use an unprivileged account and back up mutable areas and player data before upgrades. See README.md, LEGACY_SPELL_RESTORATION.md and the other maintenance notes inside the archive for test commands and compatibility details.
+The compiler uses GNU89 compatibility. The launcher runs in the foreground,
+loads area files relative to `area/`, and creates missing runtime directories.
+Use an unprivileged account and a process supervisor on your own host.
+`make -C src clean` removes generated binaries and objects.
 
-## Upstream permission and hosting precautions
+Before public registration, secure the exact case-insensitive **Admin**
+account and follow [ADMIN_BOOTSTRAP.md](genesis-maintenance/ADMIN_BOOTSTRAP.md).
+Only that identity may use the highest-rank `relevel` bootstrap.
+Back up live player records and mutable area files before upgrading; never
+replace an existing live data directory with a clean source checkout.
 
-The source contains an upstream God Wars notice requiring permission to run or redistribute it; the supplied archive did not include the referenced license documents. Verify your permission before publishing or operating a public server. This maintenance does not modernize the legacy password hashing or fully audit networking and memory management. Validate gameplay and saves in a private staging copy before public hosting.
+## Verification and remaining limits
+
+The current gameplay source passed:
+
+- 13 linked AddressSanitizer/UndefinedBehaviorSanitizer regression suites.
+- Seven isolated native gameplay groups: runtime smoke, combat/system fixes,
+  legacy spells, reconstructed abilities, maintenance fixes, crafted classes
+  and class abilities.
+- A strict GNU89 build and an independent build from the extracted archive.
+- A 398/398 exact-topic legacy help audit and a native help lookup probe
+  covering 266 entries / 583 exact topics and aliases, plus two semantic checks.
+- Archive CRC, safe paths, source-only content, byte equality and SHA256
+  manifest checks.
+
+The validation environment linked its installed crypt shared library
+explicitly. On Debian/Ubuntu, install `libcrypt-dev` for the default `-lcrypt`
+link used by the Makefile.
+
+The compiler inventory contains 385 active scoped legacy handlers with no
+empty function bodies. This is **not** proof that all gameplay variants work:
+225 handlers have no test mentions, and the full legacy effect/argument,
+save-state and balance matrix remains open. No comprehensive production
+security or PvP-balance certification is claimed.
+
+For reproducible scope and commands, see
+[LEGACY_VERIFICATION.md](genesis-maintenance/LEGACY_VERIFICATION.md) and
+[CLASS_KIT_STATUS.md](genesis-maintenance/CLASS_KIT_STATUS.md).
+From `genesis-maintenance/`, the linked suite can be run with:
+
+```sh
+sh tests/test-combat-system.sh all
+python3 tests/audit_ability_help.py
+```
+
+Know Alignment reads NPC prototype alignment; player alignment has not been
+restored. Frenzy provides rage messaging and a modest +1 hitroll/+1 damroll
+buff. Darkblessing supports evil NPCs only, with +1 hitroll/+1 damroll/+10
+armor; NPC avoidance remains level-based. Ventriloquate is restored as safe,
+attributed object-based speech. Existing level-99 spell restrictions remain.
+
+## Source downloads
+
+The current documentation-synced source package is
+[Genesis-MUD-GitHub-maintenance-source.zip](Genesis-MUD-GitHub-maintenance-source.zip).
+It contains 229 files, including a manifest covering 228 payloads. Build
+outputs, runtime logs, player records and private notes are excluded.
+
+SHA256: `40fde68c26f3188d09a2203c0048633cd94c7a450190245ba52d290f0f439c09`
+
+The earlier [Genesis-MUD-maintenance-updated.zip](Genesis-MUD-maintenance-updated.zip)
+is retained unchanged as the original maintenance-only baseline. It predates
+the expanded standalone class kits, help and hybrid roster preview.
+
+## Upstream permissions and hosting precautions
+
+The source contains an upstream God Wars notice requiring permission to run
+or redistribute the code. The supplied archive did not include the referenced
+license documents. Verify the necessary permissions before redistribution
+or public operation; this repository is not a blanket open-source license grant.
+Preserve upstream notices and reference-attribution documentation.
+
+Legacy password hashing, networking and memory management have not been
+comprehensively modernized or audited. Stage upgrades with disposable accounts,
+test backups and restoration, and review your host's firewall and process
+supervision before inviting players.

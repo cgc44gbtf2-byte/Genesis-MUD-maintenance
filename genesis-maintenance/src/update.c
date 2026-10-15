@@ -766,6 +766,7 @@ void mobile_update( void )
       
          ch_next = ch->next;
          drop_out = FALSE;
+         cyborg_update(ch);
       
          if (!IS_NPC(ch) && (IS_MORE(ch,MORE_HEAD) || IS_EXTRA(ch,EXTRA_OSWITCH)))
             is_obj = TRUE;
@@ -993,6 +994,7 @@ void obj_update( void )
 
 	obj_next = obj->next;
 
+newclasses_item_tick(obj);
 	if (obj->timer <= 0 || --obj->timer > 0) continue;
 
 	if (IS_SET(obj->extra_flags, ITEM_VANISH)) message = "$p slowly fades away to nothing.";

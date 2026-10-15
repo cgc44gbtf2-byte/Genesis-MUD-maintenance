@@ -6,8 +6,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <time.h>
 #include "merc.h"
+
+static bool drow_attack_ready(CHAR_DATA *ch,CHAR_DATA *victim)
+{
+    if (!victim || victim==ch || is_same_group(ch,victim)
+        || (!IS_NPC(victim) && (!CAN_PK(ch) || !CAN_PK(victim)))) return FALSE;
+    return !is_safe(ch,victim);
+}
 
 void do_dinduct( CHAR_DATA *ch, char *argument )
 {
@@ -162,8 +170,6 @@ void do_acidbolt( CHAR_DATA *ch, char *argument )
 	return;
     }
 
-    if (IS_ITEMAFF(ch, ITEMA_PEACE)) do_majesty(ch,"");
- 
     if (arg[0] == '\0' && ch->fighting == NULL)
     {
 	stc("Who do you wish to use Acid Bolt on?\n\r",ch);
@@ -176,7 +182,8 @@ void do_acidbolt( CHAR_DATA *ch, char *argument )
 	return;
     }
     
-    if (is_safe(ch, victim)) return;
+    if (!drow_attack_ready(ch, victim)) return;
+    if (IS_ITEMAFF(ch, ITEMA_PEACE)) do_majesty(ch,"");
 
     act("You fire a bolt of acid at $N!", ch, NULL, victim, TO_CHAR);
     act("$n fires a bolt of acid at you!", ch, NULL, victim, TO_VICT);
@@ -219,7 +226,7 @@ void do_faeriefire( CHAR_DATA *ch, char *argument )
 	return;
     }
     
-    if (is_safe(ch, victim)) return;
+    if (!drow_attack_ready(ch, victim)) return;
 
     if (!IS_NPC(victim) && victim->pcdata->atm >= number_percent())
     {
@@ -263,9 +270,12 @@ void do_summonspider( CHAR_DATA *ch, char *argument )
 {
     char buf [MAX_INPUT_LENGTH];
     CHAR_DATA *victim;
+    MOB_INDEX_DATA *prototype;
+    ROOM_INDEX_DATA *staging;
     AFFECT_DATA af;
     long sn;
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room) return;
     if (!IS_DROW(ch))
     {
 	stc("Huh?\n\r", ch);
@@ -284,9 +294,17 @@ void do_summonspider( CHAR_DATA *ch, char *argument )
 	return;
     }
 
+    prototype=get_mob_index(MOB_VNUM_GUARDIAN);
+    staging=get_room_index(ROOM_VNUM_DISCONNECTION);
+    sn=skill_lookup("guardian");
+    if (!prototype || !staging || sn<0)
+    {
+        stc("The spider's native template, staging room or guardian affect is unavailable.\n\r",ch);
+        return;
+    }
     ch->pcdata->followers++;
-    victim = create_mobile(get_mob_index(MOB_VNUM_GUARDIAN));
-    char_to_room(victim,get_room_index(ROOM_VNUM_DISCONNECTION));
+    victim = create_mobile(prototype);
+    char_to_room(victim,staging);
     free_string(victim->lord);
     victim->lord = str_dup(ch->name);
     free_string(victim->name);
@@ -316,12 +334,6 @@ void do_summonspider( CHAR_DATA *ch, char *argument )
     stc("A spider skitters out of the shadows and kneels before you.\n\r", ch);
     act("$N skitters out of the shadows and kneels before $n.", ch, NULL, victim, TO_ROOM);
 
-    if ((sn = skill_lookup("guardian")) < 0)
-    {
-	stc("Bug - please inform Akuma.\n\r", ch);
-	return;
-    }
-    
     add_follower(victim, ch);
     af.type      = sn;
     af.duration  = 6666;
@@ -397,6 +409,9 @@ void do_door( CHAR_DATA *ch, char *argument )
     char arg[MAX_INPUT_LENGTH];
     CHAR_DATA *victim;
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room || !argument
+        || strlen(argument)>=MAX_INPUT_LENGTH || ch->hit<=0
+        || ch->position<=POS_SLEEPING) return;
     argument = one_argument( argument, arg );
 
     if (!IS_DROW(ch))
@@ -412,7 +427,7 @@ void do_door( CHAR_DATA *ch, char *argument )
     }
 
     if ((victim = get_char_world(ch, arg)) == NULL || victim->in_room == NULL || ch->in_room == NULL
-     || (IS_NPC(victim) && victim->pIndexData->vnum == MOB_VNUM_EYE) || victim->in_room == ch->in_room 
+     || (IS_NPC(victim) && (!victim->pIndexData || victim->pIndexData->vnum == MOB_VNUM_EYE)) || victim->in_room == ch->in_room
      || victim->level > 800)
     {
 	stc("Nothing happens.\n\r", ch);
@@ -432,6 +447,18 @@ void do_door( CHAR_DATA *ch, char *argument )
         return;
     }
 
+    if (ch->fighting || victim->fighting || ch->fight_timer>0 || victim->fight_timer>0
+        || victim->hit<=0 || IS_MORE(ch,MORE_HEAD) || IS_EXTRA(ch,EXTRA_OSWITCH)
+        || ch->embraced!=ARE_NONE || IS_EXTRA(ch,TIED_UP)
+        || IS_AFFECTED(ch,AFF_CURSE|AFF_WEBBED|AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL)
+        || IS_AFFECTED(victim,AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL)
+        || is_affected(ch,gsn_lineage_root)
+        || IS_SET(ch->in_room->room_flags|victim->in_room->room_flags,
+            ROOM_NO_TELEPORT|ROOM_NO_RECALL|ROOM_PRIVATE|ROOM_SOLITARY))
+    {
+        stc("Combat, restraint or room/plane protections block that door.\n\r",ch);
+        return;
+    }
     stc("You step through a dimensional door.\n\r", ch);
     act("$n steps through a freshly created dimensional door and closes it behind $m.", ch, NULL, NULL, TO_ROOM);
     char_from_room(ch);
@@ -564,7 +591,7 @@ void do_skipdisc( CHAR_DATA *ch, char *argument )
 	return;
     }
 
-    if (IS_ITEMAFF(ch, AFF_FLYING))
+    if (IS_AFFECTED(ch, AFF_FLYING))
     {
 	stc("You leap off your skip disc.\n\r", ch);
 	REMOVE_BIT(ch->affected_by, AFF_FLYING);
@@ -589,9 +616,9 @@ void do_drowupkeep( CHAR_DATA *ch, char *argument )
     }
 
     stc("Drow Upkeep\n\r", ch);
-    if (ch->pcdata->drow[DROW_POWERS] == 0)
+    if (ch->pcdata->drow[DROW_POWERS] == 0 && ch->pcdata->drow[DROW_SPEED] == 0)
     {
-	stc("You have no drow abilities", ch);
+	stc("You have no drow abilities.\n\r", ch);
 	return;
     }
 
@@ -679,8 +706,11 @@ void do_shoot( CHAR_DATA *ch, char *argument )
     char buf[MSL];
     char revdoor[MIL];
     int door;
-    long sn, damage;
+    long sn, damage, roll;
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room || !argument
+        || strlen(argument)>=MAX_INPUT_LENGTH || ch->hit<=0
+        || ch->position<=POS_SLEEPING) return;
     argument = one_argument(argument, arg1);
     argument = one_argument(argument, arg2);
 
@@ -748,6 +778,28 @@ void do_shoot( CHAR_DATA *ch, char *argument )
 
     location = ch->in_room;
 
+    /* Resolve/protect the remote target before committing the shot. Every
+     * temporary room substitution is restored before returning or paying.
+     */
+    pexit=location->exit[door];
+    to_room=pexit ? pexit->to_room : NULL;
+    victim=NULL;
+    if (to_room && !IS_SET(pexit->exit_info,EX_CLOSED))
+    {
+        if (IS_SET(to_room->room_flags,ROOM_SAFE|ROOM_PRIVATE|ROOM_SOLITARY))
+        {
+            stc("That room is protected from remote attacks.\n\r",ch); return;
+        }
+        ch->in_room=to_room;
+        victim=get_char_room(ch,arg2);
+        if (victim && !drow_attack_ready(ch,victim))
+        {
+            ch->in_room=location;
+            return;
+        }
+        ch->in_room=location;
+    }
+
     sprintf(buf, "You point $p %s and shoot.", arg1);
     act(buf, ch, obj, NULL, TO_CHAR);
     sprintf(buf, "$n points $p %s and shoots.", arg1);
@@ -770,25 +822,21 @@ void do_shoot( CHAR_DATA *ch, char *argument )
 	return;
     }
 
-    ch->in_room = to_room;
-
-    if ((victim = get_char_room(ch, arg2)) != NULL)
+    if (victim != NULL)
     {
-	if (is_safe(ch, victim))
-	{
-	    ch->in_room = location;
-	    return;
-	}
+    ch->in_room=to_room;
 	sprintf(buf, "A crossbow bolt comes flying in from the %s and strikes $N.", revdoor);
 	act(buf, ch, NULL, victim, TO_NOTVICT);
 	sprintf(buf, "A crossbow bolt comes flying in from the %s and strikes you.", revdoor);
 	act(buf, ch, NULL, victim, TO_VICT);
 
-	damage = number_range(10 * char_damroll(ch), 20 * char_damroll(ch));
+roll=URANGE(0,char_damroll(ch),LONG_MAX/20);
+damage = number_range(10 * roll, 20 * roll);
 	if (!IS_NPC(victim)) damage /= 10;
 
 	hurt_person(ch, victim, damage);
-	if (victim == NULL) return;
+ch->in_room=location;
+if (victim->in_room!=to_room || victim->hit<=0 || victim->position==POS_DEAD) return;
 
 	if (IS_DROW(victim) && get_drow(victim, DROW_PIMM))
 	{

@@ -103,6 +103,26 @@ long gsn_scream;
 long gsn_horridreality;
 long gsn_maskempathy;
 long gsn_gift_recovery;
+long gsn_phoenix_ember;
+long gsn_phoenix_flare;
+long gsn_phoenix_ward;
+long gsn_phoenix_wings;
+long gsn_phoenix_ascend;
+long gsn_phoenix_recovery;
+long gsn_cyber_traits;
+long gsn_parent_recovery;
+long gsn_parent_ward;
+long gsn_parent_aspect;
+long gsn_parent_wings;
+long gsn_crafted_wings, gsn_lineage_wings, gsn_lineage_pass, gsn_lineage_root, gsn_lineage_conceal;
+long gsn_parent_senses;
+long gsn_parent_cloak;
+long gsn_parent_hindrance;
+long gsn_parent_traits;
+long gsn_parent_feet;
+long gsn_parent_horns;
+long gsn_parent_tail;
+long gsn_parent_chill;
 
 /*
  * Locals.

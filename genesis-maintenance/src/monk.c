@@ -865,6 +865,9 @@ void do_celestial( CHAR_DATA *ch, char *argument)
     CHAR_DATA *victim;
     char arg[MIL];
 
+    if (!ch || IS_NPC(ch) || !ch->pcdata || !ch->in_room || !argument
+        || strlen(argument)>=MAX_INPUT_LENGTH || ch->hit<=0
+        || ch->position<=POS_SLEEPING) return;
     argument = one_argument(argument, arg);
 
     if (!IS_MONK(ch))
@@ -904,6 +907,21 @@ void do_celestial( CHAR_DATA *ch, char *argument)
 	return;
     }
 
+    if (ch->mana<1500)
+    {
+        stc("You need 1500 mana to open a Celestial path.\n\r",ch); return;
+    }
+    if (ch->fighting || victim->fighting || ch->fight_timer>0 || victim->fight_timer>0
+        || victim->hit<=0 || ch->embraced!=ARE_NONE || IS_EXTRA(ch,TIED_UP|EXTRA_OSWITCH)
+        || IS_EXTRA(victim,EXTRA_ILLUSION) || IS_MORE(ch,MORE_HEAD)
+        || is_affected(ch,gsn_lineage_root) || IS_AFFECTED(ch,AFF_CURSE|AFF_WEBBED)
+        || (ch->affected_by & (AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL))
+            != (victim->affected_by & (AFF_SHADOWPLANE|AFF_DEEPUMBRA|AFF_ETHEREAL))
+        || IS_SET(ch->in_room->room_flags|victim->in_room->room_flags,
+            ROOM_NO_RECALL|ROOM_NO_TELEPORT|ROOM_PRIVATE|ROOM_SOLITARY))
+    {
+        stc("Combat, restraint or room/plane protections block that path.\n\r",ch); return;
+    }
     act("$n opens a Celestial path and disappears in a bright flash.", ch, NULL, NULL, TO_ROOM);
     char_from_room(ch);
     char_to_room(ch, victim->in_room);

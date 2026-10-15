@@ -41,9 +41,11 @@ int main(void)
     MOB_INDEX_DATA good, evil;
     ROOM_INDEX_DATA room, other;
     OBJ_DATA obj;
+    DESCRIPTOR_DATA target_desc;
+    char target_output[4096];
     long i, before, original;
     char *armor[] = {"armor", "shield", "stone skin"};
-    long bonuses[] = {-20, -20, -30};
+    long bonuses[] = {20, 20, 30};
     char *detection[] = {"detect evil", "detect hidden", "detect magic"};
     memset(&actor, 0, sizeof(actor));
     memset(&target, 0, sizeof(target));
@@ -84,6 +86,21 @@ int main(void)
         strip(armor[i], &actor);
         assert(actor.armor == 0);
     }
+    /* Players gain avoidance at each250 armor; NPC avoidance is level based.
+     * Verify actual player defense, not just an affect with a plausible sign.
+     */
+    actor.act = 0;
+    actor.armor = 240;
+    for (i = 0; i < 3; i++)
+    {
+        before = avoidblow(&actor);
+        invoke(armor[i], 20, &actor, &actor);
+        assert(actor.armor == 240 + bonuses[i] && avoidblow(&actor) > before);
+        strip(armor[i], &actor);
+        assert(actor.armor == 240 && avoidblow(&actor) == before);
+    }
+    actor.armor = 0;
+    actor.act = ACT_IS_NPC;
     invoke("bless", 20, &actor, &target);
     assert(target.hitroll == 2 && target.saving_throw == -2);
     invoke("bless", 20, &actor, &target);
@@ -222,13 +239,14 @@ int main(void)
     assert(target.affected == NULL);
     evil.alignment = -350;
     invoke("darkblessing", -100, &actor, &target);
-    assert(target.hitroll == 1 && target.damroll == 1 && target.armor == -10);
+    assert(target.hitroll == 1 && target.damroll == 1 && target.armor == 10);
+    assert(char_ac(&target)>0);
     assert(target.affected->duration == 2);
     invoke("darkblessing", 99999, &actor, &target);
-    assert(target.hitroll == 1 && target.damroll == 1 && target.armor == -10);
+    assert(target.hitroll == 1 && target.damroll == 1 && target.armor == 10);
     assert(target.affected->duration == 2);
     invoke("frenzy", 20, &actor, &target);
-    assert(target.hitroll == 2 && target.damroll == 2 && target.armor == -10);
+    assert(target.hitroll == 2 && target.damroll == 2 && target.armor == 10);
     strip("darkblessing", &target);
     assert(target.hitroll == 1 && target.damroll == 1 && target.armor == 0);
     invoke("darkblessing", 20, &actor, &target);
@@ -252,8 +270,39 @@ int main(void)
     invoke("word of recall", 20, &actor, &actor);
     assert(actor.in_room == &room);
     actor.fight_timer = 0;
+    room.room_flags=0;
+    stop_fighting(&actor,TRUE); stop_fighting(&target,TRUE);
+    target.hit=target.max_hit=1000000;
+    target.affected_by=AFF_INFRARED|AFF_FLYING;
+    before=target.hit;
+    invoke("earthquake",20,&actor,NULL);
+    assert(target.hit==before);
+    REMOVE_BIT(target.affected_by,AFF_FLYING);
+    SET_BIT(actor.affected_by,AFF_FLYING);
+    invoke("earthquake",20,&actor,NULL);
+    assert(target.hit<before);
+    REMOVE_BIT(actor.affected_by,AFF_FLYING);
+    stop_fighting(&actor,TRUE); stop_fighting(&target,TRUE);
+    actor.act=ACT_IS_NPC; target.act=0; target.class=CLASS_DRAGON;
+    actor.position=target.position=POS_STANDING;
+    memset(&target_desc,0,sizeof(target_desc));
+    target_output[0]=0; target_desc.outbuf=target_output;
+    target_desc.outsize=sizeof(target_output); target_desc.character=&target;
+    target.desc=&target_desc;
+    assert(!is_safe(&actor,&target));
+    target.pcdata->dragskills=DRAG_WINGSOUT; before=target.hit;
+    invoke("earthquake",20,&actor,NULL); assert(target.hit==before);
+    target.pcdata->dragskills=0; target.class=CLASS_VAMPIRE;
+    SET_BIT(target.vampaff,VAM_FLYING);
+    invoke("earthquake",20,&actor,NULL); assert(target.hit==before);
+    REMOVE_BIT(target.vampaff,VAM_FLYING); target.class=CLASS_NONE;
+    invoke("earthquake",20,&actor,NULL); assert(target.hit<before);
+    stop_fighting(&actor,TRUE); stop_fighting(&target,TRUE);
+    actor.act=0; target.act=ACT_IS_NPC; target.desc=NULL;
+    puts("Earthquake: spell/Dragon/Vampire flight spares targets, "
+        "flying casters still damage grounded foes, both NPC/player target directions passed");
     invoke("ventriloquate", 20, &actor, &actor);
     assert(actor.affected == NULL);
-    puts("Recall refuses invalid/blocked travel; Ventriloquate remains disabled");
+    puts("Recall refuses invalid/blocked travel; Ventriloquate safely ignores an absent speech target");
     return 0;
 }

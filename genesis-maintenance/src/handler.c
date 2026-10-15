@@ -151,6 +151,35 @@ void affect_modify( CHAR_DATA *ch, AFFECT_DATA *paf, bool fAdd )
     {
 	REMOVE_BIT( ch->affected_by, paf->bitvector );
 	mod = 0 - mod;
+        /* Preserve another flight owner during Phoenix Wings interactions.
+         * Equipment may be donned after Wings was cast; don't ground it when
+         * the named effect expires. Ordinary non-Phoenix removal is unchanged.
+         */
+        if (IS_SET(paf->bitvector, AFF_FLYING)
+            && (paf->type == gsn_phoenix_wings || paf->type == gsn_parent_wings
+                || paf->type == gsn_crafted_wings || paf->type == gsn_lineage_wings
+                || is_affected(ch, gsn_crafted_wings) || is_affected(ch, gsn_lineage_wings)
+                || is_affected(ch, gsn_phoenix_wings)
+                || is_affected(ch, gsn_parent_wings)))
+        {
+            AFFECT_DATA *other;
+            OBJ_DATA *obj;
+            long sn;
+            for (other = ch->affected; other != NULL; other = other->next)
+                if (other != paf && IS_SET(other->bitvector, AFF_FLYING))
+                    SET_BIT(ch->affected_by, AFF_FLYING);
+            for (obj = ch->carrying; obj != NULL; obj = obj->next_content)
+                if (obj->wear_loc >= 0
+                    && (((obj->item_type == ITEM_ARMOR) && obj->value[3] >= 1)
+                        || ((obj->item_type == ITEM_WEAPON) && obj->value[0] >= 1000)
+                        || IS_SET(obj->spectype, SITEM_SILVER)
+                        || IS_SET(obj->quest, QUEST_ARTIFACT)))
+                {
+                    sn = obj->item_type == ITEM_ARMOR ? obj->value[3]
+                                                     : obj->value[0] / 1000;
+                    if (sn == 3 || sn == 39) SET_BIT(ch->affected_by, AFF_FLYING);
+                }
+        }
     }
 
     /* The named timed curse owns only its own form bit and appearance.
@@ -949,7 +978,9 @@ void unequip_char( CHAR_DATA *ch, OBJ_DATA *obj )
 	    act("$n's eyes stop flickering with light.",ch,NULL,NULL,TO_ROOM);
 	}
 	else if (IS_AFFECTED(ch, AFF_FLYING) && (sn == 39 || sn == 3)
-		&& !is_affected(ch, 39))
+&& !is_affected(ch, 39) && !is_affected(ch, gsn_phoenix_wings)
+&& !is_affected(ch, gsn_parent_wings)
+&& !is_affected(ch, gsn_crafted_wings) && !is_affected(ch, gsn_lineage_wings))
 	{
 	    REMOVE_BIT(ch->affected_by, AFF_FLYING);
 	    send_to_char( "You slowly float to the ground.\n\r", ch );
@@ -1234,6 +1265,7 @@ void extract_obj( OBJ_DATA *obj )
     OBJ_DATA *obj_content;
     OBJ_DATA *obj_next;
 
+    newclasses_object_release(obj);
     if (obj->item_type == ITEM_WALL && obj->in_room != NULL && obj->value[0] >= 0 && obj->value[0] <= 5)
     {
 	EXIT_DATA *pexit;
@@ -1393,6 +1425,7 @@ void extract_char( CHAR_DATA *ch, bool fPull )
 	return;
     }
 
+    newclasses_release_transients(ch);
     die_follower(ch);
     stop_fighting(ch, TRUE);
 
@@ -1845,6 +1878,7 @@ long get_obj_weight( OBJ_DATA *obj )
  */
 bool room_is_dark( ROOM_INDEX_DATA *pRoomIndex )
 {
+    if (newclasses_room_dark(pRoomIndex)) return TRUE;
     if ( pRoomIndex->light > 0 )
 	return FALSE;
 
@@ -1909,10 +1943,10 @@ bool can_see( CHAR_DATA *ch, CHAR_DATA *victim )
 	return FALSE;
     if (IS_EXTRA(ch, BLINDFOLDED)) return FALSE;
     if (IS_ITEMAFF(ch, ITEMA_VISION)) return TRUE;
-    if (!IS_NPC(victim) && IS_VAMPAFF(victim, VAM_EARTHMELDED)) return FALSE;
+    if (!IS_NPC(victim) && IS_VAMPAFF(victim, VAM_EARTHMELDED) && !lineage_ground_awareness(ch,victim)) return FALSE;
     if (IS_AFFECTED(victim, AFF_KAKUSU) && !IS_NINJA(ch)) return FALSE;
     if (IS_AFFECTED(ch, AFF_SHADOWPLANE) != IS_AFFECTED(victim, AFF_SHADOWPLANE)
-     && !IS_AFFECTED(ch, AFF_SHADOWSIGHT) && !IS_VAMPAFF(ch, VAM_SPIRITEYES))
+     && !IS_AFFECTED(ch, AFF_SHADOWSIGHT) && !IS_VAMPAFF(ch, VAM_SPIRITEYES) && !lineage_shadow_sight(ch))
         return FALSE;
     if (IS_MORE(victim, MORE_SPIRIT) && !IS_VAMPAFF(ch, VAM_SPIRITEYES)) return FALSE;
     if (IS_ITEMAFF(victim,ITEMA_BLISSFUL)) return FALSE;
@@ -1933,10 +1967,11 @@ bool can_see( CHAR_DATA *ch, CHAR_DATA *victim )
    for (vch = victim->in_room->people; vch != NULL; vch = vch->next_in_room)
 	if ((IS_DROW(vch) && get_drow(vch, DROW_GLOBE))) return FALSE;
 
-    if (IS_SET(ch->in_room->added_flags, ROOM2_DARKNESS))
+    if (IS_SET(ch->in_room->added_flags, ROOM2_DARKNESS)
+        || newclasses_room_dark(ch->in_room))
     {
 	if (IS_BUI(ch) || IS_ITEMAFF(ch, ITEMA_VISION) || get_disc(ch, DISC_OBTENEBRATION) >= 1
-	 || get_tribe(ch, TRIBE_UKTENA) >= 1)
+ || get_tribe(ch, TRIBE_UKTENA) >= 1 || newclasses_darkvision(ch))
 	    return TRUE;
 	else return FALSE;
     }
@@ -1952,10 +1987,16 @@ bool can_see( CHAR_DATA *ch, CHAR_DATA *victim )
     if (!IS_NPC(ch) && IS_SET(ch->act, PLR_HOLYLIGHT)) return TRUE;
     if (IS_AFFECTED(ch, AFF_BLIND) && !IS_AFFECTED(ch, AFF_SHADOWSIGHT))
 	return FALSE;
-    if (room_is_dark(ch->in_room) && !IS_AFFECTED(ch, AFF_INFRARED) && !IS_VAMPAFF(ch, VAM_NIGHTSIGHT))
+    if (room_is_dark(ch->in_room) && !IS_AFFECTED(ch, AFF_INFRARED) && !IS_VAMPAFF(ch, VAM_NIGHTSIGHT)
+        && !newclasses_nightvision(ch))
 	return FALSE;
-    if (IS_AFFECTED(victim, AFF_HIDE) && !is_affected(ch, gsn_detect_hidden))
+    if ((IS_AFFECTED(victim, AFF_HIDE) || lineage_concealed(victim)) && !is_affected(ch, gsn_detect_hidden)
+        && !newclasses_perception(ch) && !lineage_ground_awareness(ch,victim))
 	return FALSE;
+    if (victim != ch && IS_CYBORG(victim)
+        && is_affected(victim, gsn_parent_cloak)
+        && !IS_AFFECTED(ch, AFF_DETECT_INVIS) && !newclasses_perception(ch))
+        return FALSE;
 
     return TRUE;
 }
@@ -1999,7 +2040,7 @@ bool can_see_obj( CHAR_DATA *ch, OBJ_DATA *obj )
 	return TRUE;
 
     if ( room_is_dark( ch->in_room ) && !IS_AFFECTED(ch, AFF_INFRARED) 
-	&& !IS_VAMPAFF(ch, VAM_NIGHTSIGHT) )
+&& !IS_VAMPAFF(ch, VAM_NIGHTSIGHT) && !newclasses_nightvision(ch) )
 	return FALSE;
 
     if ( !IS_NPC(ch) && IS_MORE(ch, MORE_HEAD) &&
