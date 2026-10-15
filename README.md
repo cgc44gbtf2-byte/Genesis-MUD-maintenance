@@ -2,6 +2,20 @@
 
 Finalized source-only maintenance snapshot for building and hosting on your own Linux server. No deployment has been configured or performed.
 
+## Editable source
+
+The verified archive is also unpacked in [genesis-maintenance/](genesis-maintenance/) so files and future changes can be reviewed directly on GitHub. The ZIP remains available unchanged.
+
+To build from a clone (no ZIP extraction required):
+
+    git clone https://github.com/cgc44gbtf2-byte/Genesis-MUD-maintenance.git
+    cd Genesis-MUD-maintenance/genesis-maintenance
+    sha256sum --check MANIFEST.sha256
+    make -C src
+    PORT=4000 ./run.sh
+
+The repository is private, so cloning requires your existing GitHub access. Install the Ubuntu/Debian build dependencies listed below first. No hybrid work or deployment configuration has been added.
+
 ## Download
 
 [Genesis-MUD-maintenance-updated.zip](Genesis-MUD-maintenance-updated.zip) contains 153 files, including a MANIFEST.sha256 covering 152 source/data/documentation/test payloads. Compiled programs, object files, player records, backups and runtime logs are excluded.
