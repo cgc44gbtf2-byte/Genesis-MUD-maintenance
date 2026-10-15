@@ -1,0 +1,40 @@
+name: Attach verified maintenance release assets
+
+on:
+  push:
+    branches:
+      - automation/release-maintenance-2026-10-15
+    paths:
+      - .github/workflows/upload-maintenance-release.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-maintenance-2026-10-15
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    if: github.repository == 'cgc44gbtf2-byte/Genesis-MUD-maintenance' && github.ref == 'refs/heads/automation/release-maintenance-2026-10-15'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify and upload the pinned source package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_COMMIT: 34970a1337624f0008e3c28a30c396df965f794f
+          RELEASE_TAG: maintenance-2026-10-15
+          ASSET_NAME: Genesis-MUD-GitHub-maintenance-source.zip
+          EXPECTED_SHA256: 40fde68c26f3188d09a2203c0048633cd94c7a450190245ba52d290f0f439c09
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl --fail --location --silent --show-error \
+            --connect-timeout 15 --max-time 90 --retry 2 --retry-delay 2 \
+            "https://raw.githubusercontent.com/${GH_REPO}/${SOURCE_COMMIT}/${ASSET_NAME}" \
+            --output "$ASSET_NAME"
+          printf '%s  %s\n' "$EXPECTED_SHA256" "$ASSET_NAME" > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          gh release upload "$RELEASE_TAG" "$ASSET_NAME" SHA256SUMS --repo "$GH_REPO"
